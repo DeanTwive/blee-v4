@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:blee/core/theme/app_theme.dart';
 import 'package:blee/features/auth/data/auth_repository.dart';
 import 'package:blee/features/auth/domain/user_entity.dart';
-import 'package:blee/features/auth/presentation/auth_gate.dart';
+import 'package:blee/features/auth/domain/profile_entity.dart';
+import 'package:blee/features/auth/presentation/auth_providers.dart';
+import 'package:blee/features/auth/presentation/login_screen.dart';
+import 'package:blee/features/home/presentation/home_screen.dart';
 
 class MockAuthRepository implements IAuthRepository {
   final _controller = StreamController<UserEntity?>.broadcast();
@@ -71,11 +75,16 @@ void main() {
       mockAuthRepository.dispose();
     });
 
-    testWidgets('Renders LoginScreen when user is unauthenticated', (tester) async {
+    testWidgets('Renders LoginScreen with branding and guest option', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.darkTheme,
-          home: AuthGate(authRepository: mockAuthRepository),
+        ProviderScope(
+          overrides: [
+            authRepositoryProvider.overrideWithValue(mockAuthRepository),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: const LoginScreen(),
+          ),
         ),
       );
 
@@ -86,28 +95,41 @@ void main() {
       expect(find.text('CONTINUE AS GUEST RUNNER'), findsOneWidget);
     });
 
-    testWidgets('Renders HomeScreen when user is authenticated', (tester) async {
-      mockAuthRepository.emitUser(
-        const UserEntity(
-          id: 'runner-123',
-          email: 'runner@blee.app',
-          displayName: 'Coach Carlos',
-        ),
+    testWidgets('Renders HomeScreen with runner stats and Start Run CTA', (tester) async {
+      const user = UserEntity(
+        id: 'runner-123',
+        email: 'runner@blee.app',
+        displayName: 'Coach Carlos',
+      );
+      final profile = ProfileEntity(
+        id: 'runner-123',
+        displayName: 'Coach Carlos',
+        username: 'coachcarlos',
+        tier: 'strider',
+        weeklyRhythmTarget: 3,
+        createdAt: DateTime.now(),
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.darkTheme,
-          home: AuthGate(authRepository: mockAuthRepository),
+        ProviderScope(
+          overrides: [
+            authRepositoryProvider.overrideWithValue(mockAuthRepository),
+            authStateProvider.overrideWith((ref) => Stream.value(user)),
+            currentProfileProvider.overrideWith((ref) => Stream.value(profile)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: const HomeScreen(),
+          ),
         ),
       );
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Run Community'), findsOneWidget);
       expect(find.text('Coach Carlos'), findsOneWidget);
       expect(find.text('START RUN'), findsOneWidget);
-      expect(find.text('BGC Saturday Sunrise Run'), findsOneWidget);
+      expect(find.text('STRIDER'), findsOneWidget);
+      expect(find.text('Weekly Rhythm'), findsOneWidget);
     });
   });
 }

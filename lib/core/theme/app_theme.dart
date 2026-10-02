@@ -97,6 +97,32 @@ abstract final class AppTheme {
           borderSide: const BorderSide(color: AppColors.danger),
         ),
       ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: AppColors.surfaceElevated,
+        indicatorColor: AppColors.primaryMuted,
+        elevation: 0,
+        height: 64,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            );
+          }
+          return const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textSecondary,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const IconThemeData(color: AppColors.primary, size: 24);
+          }
+          return const IconThemeData(color: AppColors.textSecondary, size: 24);
+        }),
+      ),
     );
   }
 }

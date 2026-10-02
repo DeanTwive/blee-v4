@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_typography.dart';
+import 'auth_providers.dart';
 import '../data/auth_repository.dart';
 
-class LoginScreen extends StatefulWidget {
-  final IAuthRepository authRepository;
-
-  const LoginScreen({super.key, required this.authRepository});
+class LoginScreen extends ConsumerStatefulWidget {
+  const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -39,18 +39,20 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      final notifier = ref.read(authNotifierProvider.notifier);
       if (_isSignUp) {
-        await widget.authRepository.signUpWithEmailAndPassword(
-          email: _emailController.text,
+        await notifier.signUpWithEmail(
+          email: _emailController.text.trim(),
           password: _passwordController.text,
           displayName: _nameController.text.trim(),
         );
       } else {
-        await widget.authRepository.signInWithEmailAndPassword(
-          email: _emailController.text,
+        await notifier.signInWithEmail(
+          email: _emailController.text.trim(),
           password: _passwordController.text,
         );
       }
+      // Router redirect handles navigation automatically via auth state stream
     } on AuthFailureException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (e) {
@@ -65,9 +67,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-
     try {
-      await widget.authRepository.signInAnonymously();
+      await ref.read(authNotifierProvider.notifier).signInAnonymously();
     } on AuthFailureException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (e) {
@@ -90,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // App Brand Identity
+                  // Brand identity badge
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Container(
@@ -150,20 +151,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: AppSpacing.lg),
                   ],
 
-                  // Form Fields
+                  // Name field (sign-up only)
                   if (_isSignUp) ...[
                     TextFormField(
                       controller: _nameController,
+                      textCapitalization: TextCapitalization.words,
                       decoration: const InputDecoration(
                         labelText: 'Runner Name',
                         prefixIcon: Icon(Icons.person_outline_rounded),
                       ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter your name';
-                        }
-                        return null;
-                      },
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Please enter your name' : null,
                     ),
                     const SizedBox(height: AppSpacing.md),
                   ],
@@ -176,13 +174,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       labelText: 'Email Address',
                       prefixIcon: Icon(Icons.email_outlined),
                     ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Please enter an email';
-                      }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
-                      }
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Please enter an email';
+                      if (!v.contains('@')) return 'Please enter a valid email';
                       return null;
                     },
                   ),
@@ -195,16 +189,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       labelText: 'Password',
                       prefixIcon: Icon(Icons.lock_outline_rounded),
                     ),
-                    validator: (value) {
-                      if (value == null || value.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
+                    validator: (v) =>
+                        (v == null || v.length < 6) ? 'Password must be at least 6 characters' : null,
                   ),
                   const SizedBox(height: AppSpacing.xl),
 
-                  // Primary Submit Button
                   ElevatedButton(
                     onPressed: _isLoading ? null : _submitEmailAuth,
                     child: _isLoading
@@ -220,20 +209,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: AppSpacing.md),
 
-                  // Toggle Sign In / Sign Up
                   TextButton(
                     onPressed: _isLoading
                         ? null
-                        : () {
-                            setState(() {
+                        : () => setState(() {
                               _isSignUp = !_isSignUp;
                               _errorMessage = null;
-                            });
-                          },
+                            }),
                     child: Text(
-                      _isSignUp
-                          ? 'Already a runner? Sign In'
-                          : 'New to Blee? Create an account',
+                      _isSignUp ? 'Already a runner? Sign In' : 'New to Blee? Create an account',
                       style: AppTypography.bodyMedium.copyWith(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w600,
@@ -254,7 +238,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // Guest / Fast Preview Access
                   OutlinedButton.icon(
                     icon: const Icon(Icons.directions_run_rounded, size: 20),
                     label: const Text('CONTINUE AS GUEST RUNNER'),
