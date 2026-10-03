@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_typography.dart';
+import '../../../core/widgets/bouncy_pressable.dart';
 import 'onboarding_notifier.dart';
 import 'steps/step_manifesto.dart';
 import 'steps/step_profile.dart';
@@ -89,21 +90,42 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         ),
                       ),
                     Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
-                        child: LinearProgressIndicator(
-                          value: (state.currentStep + 1) / 7,
-                          minHeight: 4,
-                          backgroundColor: AppColors.surfaceBorder,
-                          valueColor:
-                              const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                        ),
+                      child: Row(
+                        children: List.generate(7, (index) {
+                          final isCurrent = index == state.currentStep;
+                          final isReached = index <= state.currentStep;
+                          return Expanded(
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              height: 4,
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
+                                color: isReached
+                                    ? AppColors.primary
+                                    : AppColors.surfaceBorder,
+                                boxShadow: isCurrent
+                                    ? [
+                                        BoxShadow(
+                                          color: AppColors.primary.withValues(alpha: 0.6),
+                                          blurRadius: 6,
+                                          spreadRadius: 1,
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                            ),
+                          );
+                        }),
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     Text(
                       '${state.currentStep + 1} / 7',
-                      style: AppTypography.caption,
+                      style: AppTypography.caption.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
                     ),
                   ],
                 ),
@@ -147,23 +169,28 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                           textAlign: TextAlign.center,
                         ),
                       ),
-                    ElevatedButton(
-                      onPressed: (!state.canAdvance || state.isSubmitting)
+                    BouncyPressable(
+                      onTap: (!state.canAdvance || state.isSubmitting)
                           ? null
                           : _handleNext,
-                      child: state.isSubmitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: AppColors.onPrimary,
+                      child: ElevatedButton(
+                        onPressed: (!state.canAdvance || state.isSubmitting)
+                            ? null
+                            : _handleNext,
+                        child: state.isSubmitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: AppColors.onPrimary,
+                                ),
+                              )
+                            : Text(
+                                state.currentStep == 6 ? "I'M A BLEE RUNNER" : 'CONTINUE',
+                                style: const TextStyle(fontWeight: FontWeight.w800),
                               ),
-                            )
-                          : Text(
-                              state.currentStep == 6 ? "I'M A BLEE RUNNER" : 'CONTINUE',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
-                            ),
+                      ),
                     ),
                   ],
                 ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/widgets/bouncy_pressable.dart';
 import '../onboarding_notifier.dart';
 
 /// Step 4 — Motivation anchor (identity goal). SDT: Relatedness + Competence.
@@ -47,10 +48,10 @@ class StepMotivation extends ConsumerWidget {
             crossAxisCount: 2,
             crossAxisSpacing: AppSpacing.md,
             mainAxisSpacing: AppSpacing.md,
-            childAspectRatio: 1.4,
+            childAspectRatio: 1.25,
             children: _motivations.map((m) {
               final isSelected = selected == m.id;
-              return GestureDetector(
+              return BouncyPressable(
                 onTap: () => ref
                     .read(onboardingNotifierProvider.notifier)
                     .setMotivation(m.id),
@@ -69,6 +70,15 @@ class StepMotivation extends ConsumerWidget {
                           : AppColors.surfaceBorder,
                       width: isSelected ? 2 : 1,
                     ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.2),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/widgets/bouncy_pressable.dart';
 import '../onboarding_notifier.dart';
 
 /// Step 5 — Weekly rhythm commitment. Habit formation commitment hook.
@@ -38,12 +39,75 @@ class StepRhythm extends ConsumerWidget {
             'Blee will protect your streak. Choose honestly.',
             style: AppTypography.bodyMedium,
           ),
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.xl),
+
+          // Interactive 7-Day Rhythm Visualizer
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.md,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              border: Border.all(color: AppColors.surfaceBorder),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].asMap().entries.map((e) {
+                final dayIdx = e.key;
+                final dayLetter = e.value;
+                // Active days mapping based on target
+                final isRunDay = switch (selected) {
+                  2 => dayIdx == 1 || dayIdx == 3, // Tue, Thu
+                  3 => dayIdx == 1 || dayIdx == 3 || dayIdx == 5, // Tue, Thu, Sat
+                  _ => dayIdx == 0 || dayIdx == 2 || dayIdx == 4 || dayIdx == 6, // Mon, Wed, Fri, Sun
+                };
+                return Column(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isRunDay
+                            ? AppColors.primary
+                            : AppColors.surfaceBase,
+                        border: Border.all(
+                          color: isRunDay ? AppColors.primary : AppColors.surfaceBorderLight,
+                        ),
+                        boxShadow: isRunDay
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.4),
+                                  blurRadius: 8,
+                                )
+                              ]
+                            : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        dayLetter,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: isRunDay ? Colors.black : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+
           ..._options.map((opt) {
             final isSelected = selected == opt.value;
             return Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: GestureDetector(
+              child: BouncyPressable(
                 onTap: () => ref
                     .read(onboardingNotifierProvider.notifier)
                     .setWeeklyRhythmTarget(opt.value),
@@ -58,6 +122,15 @@ class StepRhythm extends ConsumerWidget {
                       color: isSelected ? AppColors.primary : AppColors.surfaceBorder,
                       width: isSelected ? 2 : 1,
                     ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.2),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Row(
                     children: [

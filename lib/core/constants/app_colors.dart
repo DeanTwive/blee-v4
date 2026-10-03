@@ -29,4 +29,28 @@ abstract final class AppColors {
   static const Color success = Color(0xFF00E676);
   static const Color danger = Color(0xFFFF3B30);
   static const Color warning = Color(0xFFFFCC00);
+
+  // Elite Mobile UI Depth Tokens: Glass, Rim Lighting & Gradients
+  static const Color glassSurface = Color(0x1AFFFFFF); // Frosted 10% white
+  static const Color glassBorder = Color(0x26FFFFFF);  // Frosted 15% white rim
+  static const Color specularHighlight = Color(0x33FFFFFF); // 20% white specular edge
+
+  // Gradients
+  static const LinearGradient primaryGradient = LinearGradient(
+    colors: [Color(0xFFE5F925), Color(0xFFC7DE00)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient cardGradient = LinearGradient(
+    colors: [Color(0xFF1C2028), Color(0xFF14171C)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient receiptGradient = LinearGradient(
+    colors: [Color(0xFF191D24), Color(0xFF12151B), Color(0xFF0B0D11)],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+  );
 }

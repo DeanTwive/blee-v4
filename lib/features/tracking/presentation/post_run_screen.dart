@@ -7,6 +7,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_typography.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/utils/geo_math.dart';
+import '../../../core/widgets/bouncy_pressable.dart';
 import '../domain/run_summary_entity.dart';
 import '../../run_receipt/presentation/run_receipt_widget.dart';
 import '../../run_receipt/presentation/run_receipt_notifier.dart';
@@ -139,19 +140,25 @@ class _PostRunScreenState extends ConsumerState<PostRunScreen>
             const SizedBox(height: AppSpacing.xl),
 
             // Share button
-            ElevatedButton.icon(
-              icon: receiptState.isSharing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.onPrimary,
-                      ),
-                    )
-                  : const Icon(Icons.share_rounded, size: 20),
-              label: Text(receiptState.isSharing ? 'Preparing...' : 'SHARE RUN RECEIPT'),
-              onPressed: receiptState.isSharing ? null : _shareReceipt,
+            BouncyPressable(
+              onTap: receiptState.isSharing ? null : _shareReceipt,
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: receiptState.isSharing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.onPrimary,
+                          ),
+                        )
+                      : const Icon(Icons.share_rounded, size: 20),
+                  label: Text(receiptState.isSharing ? 'Preparing...' : 'SHARE RUN RECEIPT'),
+                  onPressed: receiptState.isSharing ? null : _shareReceipt,
+                ),
+              ),
             ),
 
             if (receiptState.errorMessage != null) ...[
@@ -198,9 +205,16 @@ class _RunStatRow extends StatelessWidget {
     return Container(
       padding: AppSpacing.paddingLg,
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        gradient: AppColors.cardGradient,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.surfaceBorder),
+        border: Border.all(color: AppColors.specularHighlight),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,

@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_typography.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/widgets/bouncy_pressable.dart';
 import '../../auth/domain/profile_entity.dart';
 import '../../auth/presentation/auth_providers.dart';
 
@@ -162,19 +163,41 @@ class _DashboardTab extends StatelessWidget {
         Container(
           padding: AppSpacing.paddingLg,
           decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.surfaceElevated,
+                tierColor.withValues(alpha: 0.08),
+              ],
+            ),
             borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-            border: Border.all(color: AppColors.surfaceBorder),
+            border: Border.all(color: tierColor.withValues(alpha: 0.35)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: AppColors.primaryMuted,
-                    child: const Text('🏃', style: TextStyle(fontSize: 22)),
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [tierColor.withValues(alpha: 0.3), tierColor.withValues(alpha: 0.1)],
+                      ),
+                      border: Border.all(color: tierColor.withValues(alpha: 0.5), width: 1.5),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text('🏃', style: TextStyle(fontSize: 26)),
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
@@ -240,13 +263,62 @@ class _DashboardTab extends StatelessWidget {
 
         const SizedBox(height: AppSpacing.lg),
 
+        // Running Conditions Glance Chip
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(color: AppColors.surfaceBorder),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.wb_sunny_rounded, color: AppColors.warning, size: 18),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'BGC · 24°C · Ideal Running Humidity · 6:00 AM Sunrise',
+                  style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                ),
+                child: Text(
+                  'OPTIMAL',
+                  style: AppTypography.badge.copyWith(color: AppColors.success, fontSize: 9),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: AppSpacing.lg),
+
         // Start Run CTA Card
         Container(
           padding: AppSpacing.paddingXl,
           decoration: BoxDecoration(
-            color: AppColors.surfaceBase,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF1E232E), AppColors.surfaceBase],
+            ),
             borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
             border: Border.all(color: AppColors.surfaceBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Column(
             children: [
@@ -267,10 +339,13 @@ class _DashboardTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.xl),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.play_arrow_rounded, size: 28),
-                label: const Text('START RUN'),
-                onPressed: () => context.push(Routes.tracking),
+              BouncyPressable(
+                onTap: () => context.push(Routes.tracking),
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.play_arrow_rounded, size: 28),
+                  label: const Text('START RUN'),
+                  onPressed: () => context.push(Routes.tracking),
+                ),
               ),
             ],
           ),
@@ -316,13 +391,8 @@ class _DashboardTab extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('42 Runners RSVP\'d', style: AppTypography.caption),
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(100, 36),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md),
-                    ),
-                    onPressed: () {
+                  BouncyPressable(
+                    onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('RSVP confirmed for BGC Saturday Sunrise Run! 🐝'),
@@ -330,7 +400,22 @@ class _DashboardTab extends StatelessWidget {
                         ),
                       );
                     },
-                    child: const Text('RSVP', style: TextStyle(fontSize: 13)),
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(100, 36),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md),
+                      ),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('RSVP confirmed for BGC Saturday Sunrise Run! 🐝'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      child: const Text('RSVP', style: TextStyle(fontSize: 13)),
+                    ),
                   ),
                 ],
               ),
@@ -439,21 +524,24 @@ class _TrackTab extends StatelessWidget {
                 style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.xxl),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(56),
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+              BouncyPressable(
+                onTap: () => context.push(Routes.tracking),
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(56),
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                    ),
                   ),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 32),
+                  label: const Text(
+                    'LAUNCH GPS TRACKER',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                  ),
+                  onPressed: () => context.push(Routes.tracking),
                 ),
-                icon: const Icon(Icons.play_arrow_rounded, size: 32),
-                label: const Text(
-                  'LAUNCH GPS TRACKER',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-                ),
-                onPressed: () => context.push(Routes.tracking),
               ),
             ],
           ),
@@ -610,12 +698,8 @@ class _ClubsTab extends StatelessWidget {
                         ],
                       ),
                     ),
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(72, 32),
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                      ),
-                      onPressed: () {
+                    BouncyPressable(
+                      onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Joined ${club.name}! 🐝'),
@@ -623,7 +707,21 @@ class _ClubsTab extends StatelessWidget {
                           ),
                         );
                       },
-                      child: const Text('JOIN', style: TextStyle(fontSize: 12)),
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(72, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                        ),
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Joined ${club.name}! 🐝'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        child: const Text('JOIN', style: TextStyle(fontSize: 12)),
+                      ),
                     ),
                   ],
                 ),
@@ -753,17 +851,22 @@ class _ProfileTab extends ConsumerWidget {
         const SizedBox(height: AppSpacing.xl),
 
         // Sign Out Button
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.danger,
-            side: const BorderSide(color: AppColors.danger),
-            minimumSize: const Size.fromHeight(48),
-          ),
-          icon: const Icon(Icons.logout_rounded, size: 20),
-          label: const Text('SIGN OUT'),
-          onPressed: () async {
+        BouncyPressable(
+          onTap: () async {
             await ref.read(authNotifierProvider.notifier).signOut();
           },
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.danger,
+              side: const BorderSide(color: AppColors.danger),
+              minimumSize: const Size.fromHeight(48),
+            ),
+            icon: const Icon(Icons.logout_rounded, size: 20),
+            label: const Text('SIGN OUT'),
+            onPressed: () async {
+              await ref.read(authNotifierProvider.notifier).signOut();
+            },
+          ),
         ),
       ],
     );

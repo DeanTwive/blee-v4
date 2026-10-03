@@ -32,9 +32,24 @@ class RunReceiptWidget extends ConsumerWidget {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
+            colors: [
+              Color(0xFF1E232E),
+              Color(0xFF14171E),
+              Color(0xFF0F1116),
+            ],
           ),
           borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.08),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

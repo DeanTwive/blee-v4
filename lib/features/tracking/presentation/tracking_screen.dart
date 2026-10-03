@@ -6,6 +6,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_typography.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/utils/geo_math.dart';
+import '../../../core/widgets/bouncy_pressable.dart';
 import '../domain/run_summary_entity.dart';
 import 'tracking_notifier.dart';
 
@@ -51,24 +52,51 @@ class _IdleView extends StatelessWidget {
             _ErrorBanner(message: errorMessage!),
             const SizedBox(height: AppSpacing.lg),
           ],
-          const Text('🐝', style: TextStyle(fontSize: 64)),
-          const SizedBox(height: AppSpacing.lg),
+          Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primaryMuted,
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.4), width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.2),
+                  blurRadius: 24,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: const Text('🐝', style: TextStyle(fontSize: 48)),
+          ),
+          const SizedBox(height: AppSpacing.xl),
           const Text(
             'Ready to Run',
             style: AppTypography.titleLarge,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.xs),
-          const Text(
-            'BGC, Manila',
-            style: AppTypography.bodyMedium,
-            textAlign: TextAlign.center,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 16),
+              const SizedBox(width: AppSpacing.xxs),
+              const Text(
+                'BGC, Manila',
+                style: AppTypography.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.xxl),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.play_arrow_rounded, size: 28),
-            label: const Text('START RUN'),
-            onPressed: onStart,
+          BouncyPressable(
+            onTap: onStart,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.play_arrow_rounded, size: 28),
+              label: const Text('START RUN'),
+              onPressed: onStart,
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           TextButton(
@@ -172,6 +200,37 @@ class _RunningHud extends ConsumerWidget {
         // Error banner
         if (state.errorMessage != null)
           _ErrorBanner(message: state.errorMessage!),
+
+        if (isPaused)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.xs,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
+                border: Border.all(color: AppColors.warning.withValues(alpha: 0.5)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.pause_circle_filled_rounded,
+                      color: AppColors.warning, size: 16),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    'RUN PAUSED',
+                    style: AppTypography.badge.copyWith(
+                      color: AppColors.warning,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
         const Spacer(),
 
@@ -299,7 +358,7 @@ class _CircleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return BouncyPressable(
       onTap: onTap,
       child: Container(
         width: size,
@@ -308,6 +367,13 @@ class _CircleButton extends StatelessWidget {
           shape: BoxShape.circle,
           color: color,
           border: Border.all(color: AppColors.surfaceBorderLight),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Icon(icon, color: iconColor, size: size * 0.45),
       ),

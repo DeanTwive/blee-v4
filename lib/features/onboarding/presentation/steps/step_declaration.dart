@@ -61,12 +61,20 @@ class StepDeclaration extends ConsumerWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
+                    const Color(0xFF1E232E),
                     AppColors.surfaceElevated,
-                    tierColor.withValues(alpha: 0.08),
+                    tierColor.withValues(alpha: 0.12),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-                border: Border.all(color: tierColor.withValues(alpha: 0.4), width: 2),
+                border: Border.all(color: tierColor.withValues(alpha: 0.5), width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: tierColor.withValues(alpha: 0.25),
+                    blurRadius: 32,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               child: Column(
                 children: [

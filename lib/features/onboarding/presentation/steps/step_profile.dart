@@ -48,12 +48,84 @@ class _StepProfileState extends ConsumerState<StepProfile> {
               letterSpacing: -1.0,
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'This is how the community will know you.',
-            style: AppTypography.bodyMedium,
+          const SizedBox(height: AppSpacing.xl),
+          // Live Runner Identity Preview Avatar Badge
+          Center(
+            child: AnimatedBuilder(
+              animation: _nameController,
+              builder: (context, _) {
+                final text = _nameController.text.trim();
+                final initial = text.isNotEmpty ? text[0].toUpperCase() : '⚡';
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+                    border: Border.all(
+                      color: text.isNotEmpty ? AppColors.primary : AppColors.surfaceBorder,
+                      width: 1.5,
+                    ),
+                    boxShadow: text.isNotEmpty
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.2),
+                              blurRadius: 16,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: AppColors.primaryGradient,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            text.isNotEmpty ? text : 'Your Runner Name',
+                            style: AppTypography.titleMedium.copyWith(
+                              color: text.isNotEmpty
+                                  ? AppColors.textPrimary
+                                  : AppColors.textTertiary,
+                            ),
+                          ),
+                          Text(
+                            'Blee Runner · BGC Cluster',
+                            style: AppTypography.caption.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.xl),
           TextFormField(
             controller: _nameController,
             autofocus: true,

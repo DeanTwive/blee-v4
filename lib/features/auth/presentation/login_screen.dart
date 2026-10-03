@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_typography.dart';
+import '../../../core/widgets/bouncy_pressable.dart';
 import 'auth_providers.dart';
 import '../data/auth_repository.dart';
 
@@ -21,6 +22,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   bool _isSignUp = false;
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   @override
@@ -81,39 +83,69 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: AppSpacing.screenPadding,
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Brand identity badge
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                        vertical: AppSpacing.xs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                      ),
-                      child: const Text(
-                        '🐝 BLEE',
-                        style: TextStyle(
-                          color: AppColors.onPrimary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          letterSpacing: 1.2,
+      body: Stack(
+        children: [
+          // Ambient Cyber Lime Brand Glow (Top-Right Depth)
+          Positioned(
+            top: -60,
+            right: -60,
+            child: IgnorePointer(
+              child: Container(
+                width: 260,
+                height: 260,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.15),
+                      Colors.transparent,
+                    ],
+                    radius: 0.7,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: AppSpacing.screenPadding,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Brand identity badge
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                            vertical: AppSpacing.xs,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: AppColors.primaryGradient,
+                            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.25),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Text(
+                            '🐝 BLEE',
+                            style: TextStyle(
+                              color: AppColors.onPrimary,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
                   const SizedBox(height: AppSpacing.md),
                   Text(
                     _isSignUp ? 'Join the Hive.' : 'Welcome Back.',
@@ -184,28 +216,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   TextFormField(
                     controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
                       labelText: 'Password',
-                      prefixIcon: Icon(Icons.lock_outline_rounded),
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
+                      ),
                     ),
-                    validator: (v) =>
-                        (v == null || v.length < 6) ? 'Password must be at least 6 characters' : null,
+                    validator: (v) => (v == null || v.length < 6)
+                        ? 'Password must be at least 6 characters'
+                        : null,
                   ),
                   const SizedBox(height: AppSpacing.xl),
 
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _submitEmailAuth,
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: AppColors.onPrimary,
-                            ),
-                          )
-                        : Text(_isSignUp ? 'CREATE RUNNER ACCOUNT' : 'SIGN IN'),
+                  BouncyPressable(
+                    onTap: _isLoading ? null : _submitEmailAuth,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _submitEmailAuth,
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: AppColors.onPrimary,
+                              ),
+                            )
+                          : Text(_isSignUp ? 'CREATE RUNNER ACCOUNT' : 'SIGN IN'),
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.md),
 
@@ -238,10 +285,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.directions_run_rounded, size: 20),
-                    label: const Text('CONTINUE AS GUEST RUNNER'),
-                    onPressed: _isLoading ? null : _signInAsGuest,
+                  BouncyPressable(
+                    onTap: _isLoading ? null : _signInAsGuest,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.directions_run_rounded, size: 20),
+                      label: const Text('CONTINUE AS GUEST RUNNER'),
+                      onPressed: _isLoading ? null : _signInAsGuest,
+                    ),
                   ),
                 ],
               ),
@@ -249,6 +299,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
       ),
-    );
+    ],
+  ),
+);
   }
 }

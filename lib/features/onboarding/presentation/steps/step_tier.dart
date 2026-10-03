@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/widgets/bouncy_pressable.dart';
 import '../onboarding_notifier.dart';
 
 /// Step 3 — Running tier self-declaration. SDT: Autonomy.
@@ -100,7 +101,7 @@ class _TierCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return BouncyPressable(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -108,13 +109,22 @@ class _TierCard extends StatelessWidget {
         padding: AppSpacing.paddingLg,
         decoration: BoxDecoration(
           color: isSelected
-              ? accentColor.withValues(alpha: 0.1)
+              ? accentColor.withValues(alpha: 0.12)
               : AppColors.surfaceBase,
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           border: Border.all(
             color: isSelected ? accentColor : AppColors.surfaceBorder,
             width: isSelected ? 2 : 1,
           ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.2),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           children: [
