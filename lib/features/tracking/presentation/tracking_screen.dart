@@ -24,6 +24,7 @@ class TrackingScreen extends ConsumerWidget {
           TrackingStatus.idle => _IdleView(
               errorMessage: state.errorMessage,
               onStart: () => ref.read(trackingNotifierProvider.notifier).startRun(),
+              onSimulate: () => ref.read(trackingNotifierProvider.notifier).startDemoRun(),
             ),
           TrackingStatus.acquiring => const _AcquiringView(),
           TrackingStatus.running || TrackingStatus.paused => _RunningHud(state: state),
@@ -39,7 +40,8 @@ class TrackingScreen extends ConsumerWidget {
 class _IdleView extends StatelessWidget {
   final String? errorMessage;
   final VoidCallback onStart;
-  const _IdleView({this.errorMessage, required this.onStart});
+  final VoidCallback? onSimulate;
+  const _IdleView({this.errorMessage, required this.onStart, this.onSimulate});
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +100,24 @@ class _IdleView extends StatelessWidget {
               onPressed: onStart,
             ),
           ),
+          if (onSimulate != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            BouncyPressable(
+              onTap: onSimulate,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(42),
+                  side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+                ),
+                icon: const Icon(Icons.fast_forward_rounded, size: 18, color: AppColors.primary),
+                label: const Text(
+                  'SIMULATE RUN (BGC 5K DEMO)',
+                  style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                onPressed: onSimulate,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           TextButton(
             onPressed: () => context.pop(),
@@ -111,14 +131,14 @@ class _IdleView extends StatelessWidget {
 
 // ── Acquiring GPS Signal ───────────────────────────────────────────────────────
 
-class _AcquiringView extends StatefulWidget {
+class _AcquiringView extends ConsumerStatefulWidget {
   const _AcquiringView();
 
   @override
-  State<_AcquiringView> createState() => _AcquiringViewState();
+  ConsumerState<_AcquiringView> createState() => _AcquiringViewState();
 }
 
-class _AcquiringViewState extends State<_AcquiringView>
+class _AcquiringViewState extends ConsumerState<_AcquiringView>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _pulse;
@@ -170,6 +190,16 @@ class _AcquiringViewState extends State<_AcquiringView>
           const Text(
             'Move outdoors for best accuracy',
             style: AppTypography.bodyMedium,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          TextButton.icon(
+            icon: const Icon(Icons.fast_forward_rounded, size: 18, color: AppColors.primary),
+            label: const Text(
+              'Taking too long indoors? Simulate Run',
+              style: TextStyle(color: AppColors.primary, fontSize: 13),
+            ),
+            onPressed: () =>
+                ref.read(trackingNotifierProvider.notifier).startDemoRun(),
           ),
         ],
       ),

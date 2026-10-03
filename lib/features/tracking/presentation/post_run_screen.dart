@@ -9,6 +9,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/utils/geo_math.dart';
 import '../../../core/widgets/bouncy_pressable.dart';
 import '../domain/run_summary_entity.dart';
+import '../domain/run_history_provider.dart';
 import '../../run_receipt/presentation/run_receipt_widget.dart';
 import '../../run_receipt/presentation/run_receipt_notifier.dart';
 
@@ -41,6 +42,13 @@ class _PostRunScreenState extends ConsumerState<PostRunScreen>
       CurvedAnimation(parent: _animController, curve: Curves.easeOut),
     );
     _animController.forward();
+
+    // Auto-save completed run to the runner's history and dashboard
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(runHistoryNotifierProvider.notifier)
+          .addRun(widget.summary.copyWith(rpe: _selectedRpe));
+    });
   }
 
   @override
