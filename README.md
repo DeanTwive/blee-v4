@@ -28,3 +28,5 @@ Then open `http://localhost:3000` in your browser.
 ```bash
 flutter run -d chrome --web-port 3000 --web-hostname 127.0.0.1
 ```
+
+flutter build apk --release

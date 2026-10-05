@@ -24,7 +24,7 @@ android {
         // Application ID matches Firebase App Registration
         applicationId = "com.blee.blee"
         // Firebase Auth requires minSdk 23
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
