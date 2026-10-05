@@ -9,7 +9,21 @@ abstract class IGpsRepository {
   Future<bool> requestPermission();
   Stream<Position> getPositionStream({LocationSettings? settings});
   Future<void> saveBreadcrumb(BreadcrumbPoint point);
+  Future<void> saveBreadcrumbBatch(List<BreadcrumbPoint> points);
+  Future<void> logEvent(RunEvent event);
+  Future<void> updateRunRecord({
+    required String runId,
+    required String status,
+    required DateTime startedAt,
+    DateTime? endedAt,
+    int elapsedMs = 0,
+    int movingMs = 0,
+    double distanceMeters = 0.0,
+    int totalSteps = 0,
+  });
+  Future<Map<String, dynamic>?> getUnfinishedRun();
   Future<List<BreadcrumbPoint>> getBreadcrumbs(String runId);
+  Future<List<RunEvent>> getEvents(String runId);
   Future<void> deleteBreadcrumbs(String runId);
 }
 
@@ -41,7 +55,7 @@ class GpsRepository implements IGpsRepository {
       locationSettings: settings ??
           const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 3,
+            distanceFilter: 0,
           ),
     );
   }
@@ -52,8 +66,51 @@ class GpsRepository implements IGpsRepository {
   }
 
   @override
+  Future<void> saveBreadcrumbBatch(List<BreadcrumbPoint> points) {
+    return _db.insertTelemetryBatch(points);
+  }
+
+  @override
+  Future<void> logEvent(RunEvent event) {
+    return _db.logEvent(event);
+  }
+
+  @override
+  Future<void> updateRunRecord({
+    required String runId,
+    required String status,
+    required DateTime startedAt,
+    DateTime? endedAt,
+    int elapsedMs = 0,
+    int movingMs = 0,
+    double distanceMeters = 0.0,
+    int totalSteps = 0,
+  }) {
+    return _db.updateRunRecord(
+      runId: runId,
+      status: status,
+      startedAt: startedAt,
+      endedAt: endedAt,
+      elapsedMs: elapsedMs,
+      movingMs: movingMs,
+      distanceMeters: distanceMeters,
+      totalSteps: totalSteps,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getUnfinishedRun() {
+    return _db.getUnfinishedRun();
+  }
+
+  @override
   Future<List<BreadcrumbPoint>> getBreadcrumbs(String runId) {
     return _db.getPointsForRun(runId);
+  }
+
+  @override
+  Future<List<RunEvent>> getEvents(String runId) {
+    return _db.getEventsForRun(runId);
   }
 
   @override

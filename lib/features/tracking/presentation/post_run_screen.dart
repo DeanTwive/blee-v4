@@ -113,6 +113,10 @@ class _PostRunScreenState extends ConsumerState<PostRunScreen>
           children: [
             // ── Quick stats ────────────────────────────────────────────────
             _RunStatRow(summary: summary),
+            if (summary.splits.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              _SplitsBreakdownCard(splits: summary.splits),
+            ],
             const SizedBox(height: AppSpacing.xxl),
 
             // ── RPE Slider ─────────────────────────────────────────────────
@@ -210,6 +214,10 @@ class _RunStatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasSecondary = summary.elevationGainMeters > 0 ||
+        summary.totalSteps > 0 ||
+        summary.estimatedCalories > 0;
+
     return Container(
       padding: AppSpacing.paddingLg,
       decoration: BoxDecoration(
@@ -224,25 +232,161 @@ class _RunStatRow extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          _Stat(
-            value: summary.distanceKm.toStringAsFixed(2),
-            unit: 'km',
-            label: 'Distance',
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _Stat(
+                value: summary.distanceKm.toStringAsFixed(2),
+                unit: 'km',
+                label: 'Distance',
+              ),
+              Container(width: 1, height: 40, color: AppColors.surfaceBorder),
+              _Stat(
+                value: GeoMath.formatDuration(summary.durationSeconds),
+                unit: '',
+                label: 'Duration',
+              ),
+              Container(width: 1, height: 40, color: AppColors.surfaceBorder),
+              _Stat(
+                value: GeoMath.formatPace(summary.avgPaceSecondsPerKm),
+                unit: '/km',
+                label: 'Avg Pace',
+              ),
+            ],
           ),
-          Container(width: 1, height: 40, color: AppColors.surfaceBorder),
-          _Stat(
-            value: GeoMath.formatDuration(summary.durationSeconds),
-            unit: '',
-            label: 'Duration',
+          if (hasSecondary) ...[
+            const SizedBox(height: AppSpacing.md),
+            const Divider(color: AppColors.surfaceBorder, height: 1),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _Stat(
+                  value: '+${summary.elevationGainMeters.toStringAsFixed(0)}',
+                  unit: 'm',
+                  label: 'Elevation',
+                ),
+                Container(width: 1, height: 36, color: AppColors.surfaceBorder),
+                _Stat(
+                  value: summary.totalSteps > 0 ? '${summary.totalSteps}' : '--',
+                  unit: '',
+                  label: summary.avgCadenceSpm > 0
+                      ? 'Steps (${summary.avgCadenceSpm.toStringAsFixed(0)} spm)'
+                      : 'Steps',
+                ),
+                Container(width: 1, height: 36, color: AppColors.surfaceBorder),
+                _Stat(
+                  value: summary.estimatedCalories > 0
+                      ? summary.estimatedCalories.toStringAsFixed(0)
+                      : '--',
+                  unit: 'kcal',
+                  label: 'Calories',
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SplitsBreakdownCard extends StatelessWidget {
+  final List<RunSplit> splits;
+  const _SplitsBreakdownCard({required this.splits});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: AppSpacing.paddingLg,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppColors.surfaceBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'KILOMETER SPLITS',
+                style: AppTypography.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                'Minetti GAP',
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
-          Container(width: 1, height: 40, color: AppColors.surfaceBorder),
-          _Stat(
-            value: GeoMath.formatPace(summary.avgPaceSecondsPerKm),
-            unit: '/km',
-            label: 'Avg Pace',
+          const SizedBox(height: AppSpacing.md),
+          Table(
+            columnWidths: const {
+              0: FixedColumnWidth(36),
+              1: FlexColumnWidth(2),
+              2: FlexColumnWidth(2),
+              3: FlexColumnWidth(2),
+            },
+            children: [
+              const TableRow(
+                children: [
+                  Text('KM', style: AppTypography.caption),
+                  Text('PACE', style: AppTypography.caption),
+                  Text('GAP', style: AppTypography.caption),
+                  Text('ELEV', style: AppTypography.caption, textAlign: TextAlign.right),
+                ],
+              ),
+              ...splits.map((s) {
+                final elevSign = s.elevationDeltaMeters >= 0 ? '+' : '';
+                return TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Text(
+                        '${s.splitIndex}',
+                        style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Text(
+                        GeoMath.formatPace(s.paceSecondsPerKm),
+                        style: AppTypography.bodyMedium,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Text(
+                        GeoMath.formatPace(s.gapSecondsPerKm ?? s.paceSecondsPerKm),
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Text(
+                        '$elevSign${s.elevationDeltaMeters.toStringAsFixed(0)}m',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: s.elevationDeltaMeters >= 0 ? AppColors.warning : AppColors.success,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
           ),
         ],
       ),

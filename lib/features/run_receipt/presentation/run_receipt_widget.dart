@@ -146,6 +146,37 @@ class RunReceiptWidget extends ConsumerWidget {
               ),
             ),
 
+            // ── Secondary Telemetry Badges ─────────────────────────────────────
+            if (summary.elevationGainMeters > 0 || summary.totalSteps > 0 || summary.estimatedCalories > 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.md),
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    if (summary.elevationGainMeters > 0)
+                      _ReceiptBadge(
+                        icon: Icons.terrain_rounded,
+                        text: '+${summary.elevationGainMeters.toStringAsFixed(0)}m',
+                        color: tierColor,
+                      ),
+                    if (summary.totalSteps > 0)
+                      _ReceiptBadge(
+                        icon: Icons.directions_walk_rounded,
+                        text: '${summary.totalSteps} steps',
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                    if (summary.estimatedCalories > 0)
+                      _ReceiptBadge(
+                        icon: Icons.local_fire_department_rounded,
+                        text: '${summary.estimatedCalories.toStringAsFixed(0)} kcal',
+                        color: AppColors.safetyOrange,
+                      ),
+                  ],
+                ),
+              ),
+
             // ── Footer ────────────────────────────────────────────────────────
             _ReceiptFooter(summary: summary, tierColor: tierColor),
           ],
@@ -542,6 +573,46 @@ class _ReceiptBarcode extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ReceiptBadge extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  const _ReceiptBadge({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: color,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

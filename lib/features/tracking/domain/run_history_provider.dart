@@ -44,8 +44,8 @@ class RunHistoryNotifier extends Notifier<RunHistoryState> {
     return [
       RunSummaryEntity(
         runId: 'B7C3D2E1',
-        startedAt: now.subtract(const Duration(days: 1, hours: 2)),
-        endedAt: now.subtract(const Duration(days: 1, hours: 1, minutes: 32)),
+        startedAt: now.subtract(const Duration(hours: 3)),
+        endedAt: now.subtract(const Duration(hours: 2, minutes: 32)),
         distanceMeters: 5200,
         durationSeconds: 1695, // 28:15
         avgPaceSecondsPerKm: 326, // 5:26 /km

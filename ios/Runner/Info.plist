@@ -66,5 +66,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Blee tracks your running distance, pace, and route.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Blee continues tracking your run while your screen is locked.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Blee uses your step sensor to calculate cadence and step length.</string>
 </dict>
 </plist>
