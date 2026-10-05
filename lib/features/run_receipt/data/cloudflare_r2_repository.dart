@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import '../../../core/utils/crash_reporter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,12 +12,21 @@ abstract class ICloudflareR2Repository {
 }
 
 class CloudflareR2Repository implements ICloudflareR2Repository {
-  final SupabaseClient _supabase;
+  SupabaseClient? _supabase;
   static const String _bucket = 'blee-run-receipts';
   static const String _publicCdnBase = 'https://receipts.blee.app';
 
-  CloudflareR2Repository({SupabaseClient? supabase})
-      : _supabase = supabase ?? Supabase.instance.client;
+  CloudflareR2Repository({SupabaseClient? supabase}) : _supabase = supabase;
+
+  SupabaseClient? get _client {
+    if (_supabase != null) return _supabase;
+    try {
+      _supabase = Supabase.instance.client;
+      return _supabase;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Future<String?> uploadReceiptImage({
@@ -25,10 +34,15 @@ class CloudflareR2Repository implements ICloudflareR2Repository {
     required String runId,
     required Uint8List imageBytes,
   }) async {
+    final client = _client;
+    if (client == null) {
+      debugPrint('[CloudflareR2Repository] Supabase not initialized, skipping receipt upload');
+      return null;
+    }
     final path = '$userId/$runId.png';
     try {
       // Upload to Supabase Storage (backed by S3/R2-compatible storage)
-      await _supabase.storage.from(_bucket).uploadBinary(
+      await client.storage.from(_bucket).uploadBinary(
             path,
             imageBytes,
             fileOptions: const FileOptions(
@@ -41,7 +55,7 @@ class CloudflareR2Repository implements ICloudflareR2Repository {
 
       // Persist the receipt URL to Supabase runs table if row exists
       try {
-        await _supabase
+        await client
             .from('runs')
             .update({'run_receipt_url': cdnUrl})
             .eq('id', runId);

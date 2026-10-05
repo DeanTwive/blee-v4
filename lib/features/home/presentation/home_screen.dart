@@ -9,10 +9,11 @@ import '../../../core/utils/geo_math.dart';
 import '../../../core/widgets/bouncy_pressable.dart';
 import '../../auth/domain/profile_entity.dart';
 import '../../auth/presentation/auth_providers.dart';
-import '../../run_receipt/presentation/run_receipt_widget.dart';
 import '../../tracking/domain/run_history_provider.dart';
 import '../../tracking/domain/run_summary_entity.dart';
 import '../../tracking/domain/tracking_preferences_provider.dart';
+import '../../tracking/presentation/activity_detail_screen.dart';
+import '../../tracking/presentation/tracking_notifier.dart';
 import '../domain/clubs_provider.dart';
 import '../domain/community_events_provider.dart';
 
@@ -384,11 +385,17 @@ class _DashboardTab extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.xl),
               BouncyPressable(
-                onTap: () => context.push(Routes.tracking),
+                onTap: () {
+                  ref.read(trackingNotifierProvider.notifier).startRun();
+                  context.push(Routes.tracking);
+                },
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.play_arrow_rounded, size: 28),
                   label: const Text('START RUN'),
-                  onPressed: () => context.push(Routes.tracking),
+                  onPressed: () {
+                    ref.read(trackingNotifierProvider.notifier).startRun();
+                    context.push(Routes.tracking);
+                  },
                 ),
               ),
             ],
@@ -526,7 +533,16 @@ class _DashboardTab extends ConsumerWidget {
           for (final run in runHistory.recentRuns.take(3))
             _RecentRunCard(
               run: run,
-              onTap: () => _showRunReceiptModal(context, run),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ActivityDetailScreen(
+                      run: run,
+                      runnerName: displayName,
+                    ),
+                  ),
+                );
+              },
             ),
         ],
 
@@ -586,6 +602,10 @@ class _RecentRunCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final paceText = run.distanceKm > 0.01
+        ? '${GeoMath.formatPace(run.avgPaceSecondsPerKm)} /km'
+        : '--:--';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: BouncyPressable(
@@ -637,14 +657,14 @@ class _RecentRunCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${GeoMath.formatDuration(run.durationSeconds)} · ${GeoMath.formatPace(run.avgPaceSecondsPerKm)} /km',
+                      '${GeoMath.formatDuration(run.durationSeconds)} · $paceText',
                       style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.receipt_long_rounded,
-                  color: AppColors.textTertiary, size: 20),
+              const Icon(Icons.arrow_forward_ios_rounded,
+                  color: AppColors.textTertiary, size: 14),
             ],
           ),
         ),
@@ -716,7 +736,10 @@ class _TrackTab extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.xxl),
               BouncyPressable(
-                onTap: () => context.push(Routes.tracking),
+                onTap: () {
+                  ref.read(trackingNotifierProvider.notifier).startRun();
+                  context.push(Routes.tracking);
+                },
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
@@ -731,7 +754,10 @@ class _TrackTab extends ConsumerWidget {
                     'LAUNCH GPS TRACKER',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                   ),
-                  onPressed: () => context.push(Routes.tracking),
+                  onPressed: () {
+                    ref.read(trackingNotifierProvider.notifier).startRun();
+                    context.push(Routes.tracking);
+                  },
                 ),
               ),
             ],
@@ -1377,32 +1403,6 @@ void _showEventDetailsSheet(BuildContext context, CommunityEvent event, WidgetRe
             ),
             const SizedBox(height: AppSpacing.md),
           ],
-        ),
-      );
-    },
-  );
-}
-
-void _showRunReceiptModal(BuildContext context, RunSummaryEntity run) {
-  showDialog<void>(
-    context: context,
-    builder: (ctx) {
-      return Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              RunReceiptWidget(summary: run),
-              const SizedBox(height: AppSpacing.md),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.close_rounded),
-                label: const Text('CLOSE RECEIPT'),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ],
-          ),
         ),
       );
     },

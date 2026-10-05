@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import '../domain/run_summary_entity.dart';
 
 /// Validation result for raw telemetry coordinates.
@@ -25,6 +26,7 @@ class GpsValidationResult {
 abstract final class GpsFilter {
   // Gating & Speed Constants
   static const double maxAcceptableAccuracyMeters = 25.0;
+  static const double maxWebAcceptableAccuracyMeters = 1000.0;
   static const double maxAccuracyMeters = 30.0;
   static const double cleanAccuracyThresholdMeters = 15.0;
   static const double maxSpeedMetersPerSec = 12.5; // 45 km/h
@@ -63,6 +65,7 @@ abstract final class GpsFilter {
     required double longitude,
     required double accuracy,
     double? speedMetersPerSec,
+    double? maxAccuracy,
   }) {
     if (latitude < -90.0 || latitude > 90.0) {
       return GpsValidationResult.rejected('Latitude out of bounds');
@@ -70,8 +73,9 @@ abstract final class GpsFilter {
     if (longitude < -180.0 || longitude > 180.0) {
       return GpsValidationResult.rejected('Longitude out of bounds');
     }
-    if (accuracy <= 0 || accuracy > maxAcceptableAccuracyMeters) {
-      return GpsValidationResult.rejected('Accuracy > 25m or invalid: $accuracy');
+    final effectiveMax = maxAccuracy ?? (kIsWeb ? maxWebAcceptableAccuracyMeters : maxAcceptableAccuracyMeters);
+    if (accuracy <= 0 || accuracy > effectiveMax) {
+      return GpsValidationResult.rejected('Accuracy > ${effectiveMax.toInt()}m or invalid: $accuracy');
     }
     if (speedMetersPerSec != null && speedMetersPerSec > maxSpeedMetersPerSec) {
       return GpsValidationResult.rejected('Unrealistic speed burst: $speedMetersPerSec m/s');

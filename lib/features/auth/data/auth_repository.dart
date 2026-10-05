@@ -18,21 +18,35 @@ abstract interface class IAuthRepository {
 }
 
 class FirebaseAuthRepository implements IAuthRepository {
-  final fb.FirebaseAuth _firebaseAuth;
+  fb.FirebaseAuth? _firebaseAuth;
 
   FirebaseAuthRepository({fb.FirebaseAuth? firebaseAuth})
-      : _firebaseAuth = firebaseAuth ?? fb.FirebaseAuth.instance;
+      : _firebaseAuth = firebaseAuth;
+
+  fb.FirebaseAuth? get _auth {
+    if (_firebaseAuth != null) return _firebaseAuth;
+    try {
+      _firebaseAuth = fb.FirebaseAuth.instance;
+      return _firebaseAuth;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Stream<UserEntity?> get authStateChanges {
-    return _firebaseAuth.authStateChanges().map(
+    final auth = _auth;
+    if (auth == null) {
+      return Stream.value(null);
+    }
+    return auth.authStateChanges().map(
           (user) => user != null ? _mapFirebaseUser(user) : null,
         );
   }
 
   @override
   UserEntity? get currentUser {
-    final user = _firebaseAuth.currentUser;
+    final user = _auth?.currentUser;
     return user != null ? _mapFirebaseUser(user) : null;
   }
 
@@ -41,8 +55,12 @@ class FirebaseAuthRepository implements IAuthRepository {
     required String email,
     required String password,
   }) async {
+    final auth = _auth;
+    if (auth == null) {
+      throw const AuthFailureException('Authentication service is unavailable.');
+    }
     try {
-      final credential = await _firebaseAuth.signInWithEmailAndPassword(
+      final credential = await auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
@@ -64,8 +82,12 @@ class FirebaseAuthRepository implements IAuthRepository {
     required String password,
     String? displayName,
   }) async {
+    final auth = _auth;
+    if (auth == null) {
+      throw const AuthFailureException('Authentication service is unavailable.');
+    }
     try {
-      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+      final credential = await auth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
@@ -77,7 +99,7 @@ class FirebaseAuthRepository implements IAuthRepository {
         await user.updateDisplayName(displayName);
         await user.reload();
       }
-      return _mapFirebaseUser(_firebaseAuth.currentUser ?? user);
+      return _mapFirebaseUser(auth.currentUser ?? user);
     } on fb.FirebaseAuthException catch (e) {
       throw AuthFailureException(_mapFirebaseError(e.code));
     } catch (e) {
@@ -87,8 +109,12 @@ class FirebaseAuthRepository implements IAuthRepository {
 
   @override
   Future<UserEntity> signInAnonymously() async {
+    final auth = _auth;
+    if (auth == null) {
+      throw const AuthFailureException('Authentication service is unavailable.');
+    }
     try {
-      final credential = await _firebaseAuth.signInAnonymously();
+      final credential = await auth.signInAnonymously();
       final user = credential.user;
       if (user == null) {
         throw const AuthFailureException('Anonymous sign-in failed.');
@@ -103,7 +129,7 @@ class FirebaseAuthRepository implements IAuthRepository {
 
   @override
   Future<void> signOut() async {
-    await _firebaseAuth.signOut();
+    await _auth?.signOut();
   }
 
   UserEntity _mapFirebaseUser(fb.User user) {

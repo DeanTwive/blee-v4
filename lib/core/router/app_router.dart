@@ -7,7 +7,9 @@ import '../../features/home/presentation/home_screen.dart';
 import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/tracking/presentation/tracking_screen.dart';
 import '../../features/tracking/presentation/post_run_screen.dart';
+import '../../features/tracking/presentation/activity_detail_screen.dart';
 import '../../features/tracking/domain/run_summary_entity.dart';
+import '../../features/tracking/domain/run_history_provider.dart';
 
 // Route name constants — prevents magic strings
 abstract final class Routes {
@@ -16,6 +18,7 @@ abstract final class Routes {
   static const onboarding = '/onboarding';
   static const tracking = '/tracking';
   static const postRun = '/post-run';
+  static const activityDetail = '/activity-detail';
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -56,6 +59,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         if (profile?.onboardingComplete == true) return Routes.home;
       }
 
+      // Safe guards for web reload / direct navigation to post-run or activity-detail
+      if (state.matchedLocation == Routes.postRun && state.extra == null) {
+        final history = ref.read(runHistoryNotifierProvider);
+        if (history.runs.isEmpty) {
+          return Routes.home;
+        }
+      }
+
       return null;
     },
     routes: [
@@ -83,8 +94,53 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.postRun,
         name: 'postRun',
         builder: (context, state) {
-          final summary = state.extra as RunSummaryEntity;
+          RunSummaryEntity? summary;
+          if (state.extra is RunSummaryEntity) {
+            summary = state.extra as RunSummaryEntity;
+          } else {
+            final history = ref.read(runHistoryNotifierProvider);
+            summary = history.runs.isNotEmpty ? history.runs.first : null;
+          }
+
+          if (summary == null) {
+            return const HomeScreen();
+          }
           return PostRunScreen(summary: summary);
+        },
+      ),
+      GoRoute(
+        path: Routes.activityDetail,
+        name: 'activityDetail',
+        builder: (context, state) {
+          RunSummaryEntity? run;
+          String runnerName = ref.read(currentProfileProvider).value?.displayName ?? 'Runner';
+
+          if (state.extra is Map<String, dynamic>) {
+            final extra = state.extra as Map<String, dynamic>;
+            if (extra['run'] is RunSummaryEntity) {
+              run = extra['run'] as RunSummaryEntity;
+            }
+            if (extra['runnerName'] is String) {
+              runnerName = extra['runnerName'] as String;
+            }
+          } else if (state.extra is RunSummaryEntity) {
+            run = state.extra as RunSummaryEntity;
+          } else {
+            final runId = state.uri.queryParameters['id'];
+            final history = ref.read(runHistoryNotifierProvider);
+            if (runId != null && runId.isNotEmpty) {
+              run = history.runs.where((r) => r.runId == runId).firstOrNull;
+            }
+            run ??= history.runs.firstOrNull;
+          }
+
+          if (run == null) {
+            return const HomeScreen();
+          }
+          return ActivityDetailScreen(
+            run: run,
+            runnerName: runnerName,
+          );
         },
       ),
     ],

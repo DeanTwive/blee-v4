@@ -29,15 +29,28 @@ abstract interface class IProfileRepository {
 }
 
 class SupabaseProfileRepository implements IProfileRepository {
-  final SupabaseClient _supabase;
+  SupabaseClient? _supabase;
 
-  SupabaseProfileRepository({SupabaseClient? client})
-      : _supabase = client ?? Supabase.instance.client;
+  SupabaseProfileRepository({SupabaseClient? client}) : _supabase = client;
+
+  SupabaseClient? get _client {
+    if (_supabase != null) return _supabase;
+    try {
+      _supabase = Supabase.instance.client;
+      return _supabase;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Future<Result<ProfileEntity?>> fetchProfile(String uid) async {
+    final client = _client;
+    if (client == null) {
+      return const Failure('Cloud database is not initialized.');
+    }
     try {
-      final data = await _supabase
+      final data = await client
           .from('profiles')
           .select()
           .eq('id', uid)
@@ -56,6 +69,10 @@ class SupabaseProfileRepository implements IProfileRepository {
     required String displayName,
     String? email,
   }) async {
+    final client = _client;
+    if (client == null) {
+      return const Failure('Cloud database is not initialized.');
+    }
     try {
       // Check existence first — avoids a redundant upsert on every sign-in.
       final existing = await fetchProfile(uid);
@@ -72,7 +89,7 @@ class SupabaseProfileRepository implements IProfileRepository {
         createdAt: DateTime.now(),
       );
 
-      await _supabase.from('profiles').upsert(
+      await client.from('profiles').upsert(
         newProfile.toMap(),
         onConflict: 'id', // idempotent
       );
@@ -93,6 +110,10 @@ class SupabaseProfileRepository implements IProfileRepository {
     int? weeklyRhythmTarget,
     bool? onboardingComplete,
   }) async {
+    final client = _client;
+    if (client == null) {
+      return const Failure('Cloud database is not initialized.');
+    }
     try {
       final updates = <String, dynamic>{
         'updated_at': DateTime.now().toIso8601String(),
@@ -103,7 +124,7 @@ class SupabaseProfileRepository implements IProfileRepository {
         'onboarding_complete': ?onboardingComplete,
       };
 
-      final updated = await _supabase
+      final updated = await client
           .from('profiles')
           .update(updates)
           .eq('id', uid)
@@ -119,7 +140,11 @@ class SupabaseProfileRepository implements IProfileRepository {
 
   @override
   Stream<ProfileEntity?> watchProfile(String uid) {
-    return _supabase
+    final client = _client;
+    if (client == null) {
+      return const Stream.empty();
+    }
+    return client
         .from('profiles')
         .stream(primaryKey: ['id'])
         .eq('id', uid)

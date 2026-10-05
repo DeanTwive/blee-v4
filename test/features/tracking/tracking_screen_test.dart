@@ -26,7 +26,7 @@ void main() {
           ],
           child: MaterialApp(
             theme: AppTheme.darkTheme,
-            home: const TrackingScreen(),
+            home: const TrackingScreen(autoStart: false),
           ),
         ),
       );
@@ -82,7 +82,8 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('KILOMETERS'), findsOneWidget);
       expect(find.text('3.20'), findsOneWidget);
@@ -112,7 +113,8 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     });
@@ -137,9 +139,51 @@ void main() {
         ),
       );
 
+      expect(find.text('Location permission denied. Please enable it in Settings.'), findsOneWidget);
+    });
+
+    testWidgets('Tapping stop displays Finish Run sheet with DISCARD RUN button and confirmation dialog', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            trackingNotifierProvider.overrideWith(
+              () => FakeTrackingNotifier(
+                const TrackingState(
+                  status: TrackingStatus.paused,
+                  distanceMeters: 500,
+                  elapsedSeconds: 60,
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: const TrackingScreen(),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Tap stop button in paused state
+      await tester.tap(find.byIcon(Icons.stop_rounded));
       await tester.pumpAndSettle();
 
-      expect(find.text('Location permission denied. Please enable it in Settings.'), findsOneWidget);
+      // Bottom sheet should be visible with Finish, Resume, and Discard options
+      expect(find.text('Finish Run?'), findsOneWidget);
+      expect(find.text('FINISH & SAVE RUN'), findsOneWidget);
+      expect(find.text('RESUME RUN'), findsOneWidget);
+      expect(find.text('DISCARD RUN'), findsOneWidget);
+
+      // Tap Discard Run
+      await tester.tap(find.text('DISCARD RUN'));
+      await tester.pumpAndSettle();
+
+      // Discard confirmation dialog should be displayed
+      expect(find.text('Discard Run?'), findsOneWidget);
+      expect(find.text('KEEP RUNNING'), findsOneWidget);
+      expect(find.text('DISCARD'), findsOneWidget);
     });
   });
 }

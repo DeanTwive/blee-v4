@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'local_run_db.dart';
@@ -7,6 +8,7 @@ import '../domain/run_summary_entity.dart';
 abstract class IGpsRepository {
   Future<bool> checkPermission();
   Future<bool> requestPermission();
+  Future<Position?> getCurrentPosition();
   Stream<Position> getPositionStream({LocationSettings? settings});
   Future<void> saveBreadcrumb(BreadcrumbPoint point);
   Future<void> saveBreadcrumbBatch(List<BreadcrumbPoint> points);
@@ -50,13 +52,31 @@ class GpsRepository implements IGpsRepository {
   }
 
   @override
+  Future<Position?> getCurrentPosition() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: kIsWeb
+            ? const LocationSettings(accuracy: LocationAccuracy.high)
+            : const LocationSettings(accuracy: LocationAccuracy.bestForNavigation),
+      ).timeout(const Duration(seconds: 4));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Stream<Position> getPositionStream({LocationSettings? settings}) {
     return Geolocator.getPositionStream(
       locationSettings: settings ??
-          const LocationSettings(
-            accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 0,
-          ),
+          (kIsWeb
+              ? const LocationSettings(
+                  accuracy: LocationAccuracy.high,
+                  distanceFilter: 0,
+                )
+              : const LocationSettings(
+                  accuracy: LocationAccuracy.bestForNavigation,
+                  distanceFilter: 0,
+                )),
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../../core/utils/geo_math.dart';
 
 /// Immutable domain entity for a recorded raw telemetry breadcrumb point.
 @immutable
@@ -178,6 +179,9 @@ class RunSummaryEntity {
   final List<RunSplit> splits;
   final int? rpe;
   final List<BreadcrumbPoint> breadcrumbs;
+  final String? title;
+  final String? imagePath;
+  final Uint8List? imageBytes;
 
   const RunSummaryEntity({
     required this.runId,
@@ -198,11 +202,47 @@ class RunSummaryEntity {
     this.splits = const [],
     this.rpe,
     required this.breadcrumbs,
+    this.title,
+    this.imagePath,
+    this.imageBytes,
   });
 
   double get distanceKm => distanceMeters / 1000.0;
 
-  RunSummaryEntity copyWith({int? rpe}) {
+  String get defaultTitle {
+    final hour = startedAt.hour;
+    if (hour >= 5 && hour < 11) return 'Morning Run';
+    if (hour >= 11 && hour < 14) return 'Lunch Run';
+    if (hour >= 14 && hour < 18) return 'Afternoon Run';
+    if (hour >= 18 && hour < 22) return 'Evening Run';
+    return 'Night Run';
+  }
+
+  String get displayTitle => (title != null && title!.trim().isNotEmpty) ? title!.trim() : defaultTitle;
+  bool get hasImage => (imageBytes != null && imageBytes!.isNotEmpty) || (imagePath != null && imagePath!.isNotEmpty);
+
+  /// Returns the runner's actual recorded GPS breadcrumb points for drawing the route polyline.
+  /// Never synthesizes fake dummy loops or mock coordinates.
+  List<BreadcrumbPoint> get effectiveBreadcrumbs {
+    return breadcrumbs.where((p) => !p.isRejected).toList();
+  }
+
+  /// Human-readable location description dynamically resolved from the runner's real GPS coordinates.
+  String get displayLocation {
+    final valid = effectiveBreadcrumbs;
+    if (valid.isNotEmpty) {
+      return GeoMath.resolveApproximateLocation(valid.first.latitude, valid.first.longitude);
+    }
+    return 'Location Unavailable';
+  }
+
+  RunSummaryEntity copyWith({
+    int? rpe,
+    String? title,
+    String? imagePath,
+    Uint8List? imageBytes,
+    bool clearImage = false,
+  }) {
     return RunSummaryEntity(
       runId: runId,
       startedAt: startedAt,
@@ -222,6 +262,9 @@ class RunSummaryEntity {
       splits: splits,
       rpe: rpe ?? this.rpe,
       breadcrumbs: breadcrumbs,
+      title: title ?? this.title,
+      imagePath: clearImage ? null : (imagePath ?? this.imagePath),
+      imageBytes: clearImage ? null : (imageBytes ?? this.imageBytes),
     );
   }
 }
@@ -297,6 +340,8 @@ class TrackingState {
 
   double get distanceKm => distanceMeters / 1000;
   bool get isActive => status == TrackingStatus.running || status == TrackingStatus.paused;
+  double? get currentLatitude => breadcrumbs.isNotEmpty ? breadcrumbs.last.latitude : null;
+  double? get currentLongitude => breadcrumbs.isNotEmpty ? breadcrumbs.last.longitude : null;
 
   TrackingState copyWith({
     TrackingStatus? status,

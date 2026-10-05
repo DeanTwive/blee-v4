@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:blee/core/utils/geo_math.dart';
 import 'package:blee/features/tracking/data/gps_filter.dart';
 import 'package:blee/features/tracking/domain/run_summary_entity.dart';
 
@@ -241,6 +242,43 @@ void main() {
       expect(gain, 0.0);
       expect(loss, 3.0);
       expect(anchor, 19.5);
+    });
+
+    test('resolveApproximateLocation accurately detects Taiwan locations and never falls back to BGC', () {
+      // User's exact Taiwan location (Linkou, New Taipei / Taoyuan)
+      final locationLinkou = GeoMath.resolveApproximateLocation(25.068, 121.365);
+      expect(locationLinkou, contains('Linkou'));
+      expect(locationLinkou, isNot(contains('Bonifacio')));
+
+      final locationTaipei = GeoMath.resolveApproximateLocation(25.040, 121.550);
+      expect(locationTaipei, contains('Taipei'));
+
+      final locationBGC = GeoMath.resolveApproximateLocation(14.551, 121.050);
+      expect(locationBGC, contains('Bonifacio Global City'));
+    });
+
+    test('effectiveBreadcrumbs preserves straight walk and does not synthesize dummy circles', () {
+      final straightPoints = [
+        BreadcrumbPoint(runId: 'r1', latitude: 25.060, longitude: 121.360, accuracy: 5, timestamp: DateTime.now()),
+        BreadcrumbPoint(runId: 'r1', latitude: 25.061, longitude: 121.360, accuracy: 5, timestamp: DateTime.now()),
+        BreadcrumbPoint(runId: 'r1', latitude: 25.062, longitude: 121.360, accuracy: 5, timestamp: DateTime.now()),
+      ];
+
+      final summary = RunSummaryEntity(
+        runId: 'r1',
+        startedAt: DateTime.now(),
+        endedAt: DateTime.now(),
+        distanceMeters: 220,
+        durationSeconds: 120,
+        avgPaceSecondsPerKm: 300,
+        breadcrumbs: straightPoints,
+      );
+
+      // Must strictly contain the 3 real points in a straight line, NO synthetic 30-point circle
+      expect(summary.effectiveBreadcrumbs.length, 3);
+      expect(summary.effectiveBreadcrumbs.first.latitude, 25.060);
+      expect(summary.effectiveBreadcrumbs.last.latitude, 25.062);
+      expect(summary.displayLocation, contains('Linkou'));
     });
   });
 }

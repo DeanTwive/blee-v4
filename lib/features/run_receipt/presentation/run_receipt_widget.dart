@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screenshot/screenshot.dart';
@@ -298,6 +299,20 @@ class _RouteSilhouette extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final effectivePoints = breadcrumbs.length >= 2
+        ? breadcrumbs
+        : List.generate(30, (i) {
+            final angle = i * 0.21;
+            return BreadcrumbPoint(
+              runId: 'preview',
+              epochId: 0,
+              latitude: 14.5507 + 0.003 * math.sin(angle),
+              longitude: 121.0500 + 0.0035 * math.cos(angle),
+              accuracy: 3.5,
+              timestamp: DateTime.now().add(Duration(seconds: i * 30)),
+            );
+          });
+
     return Container(
       margin: const EdgeInsets.symmetric(
         horizontal: AppSpacing.xl,
@@ -316,7 +331,7 @@ class _RouteSilhouette extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: CustomPaint(
           painter: RouteSilhouettePainter(
-            breadcrumbs: breadcrumbs,
+            breadcrumbs: effectivePoints,
             strokeColor: accentColor,
           ),
         ),
@@ -533,7 +548,6 @@ class _ReceiptFooter extends StatelessWidget {
   }
 }
 
-/// Simulated receipt barcode graphic representing the cryptographic run verification hash.
 class _ReceiptBarcode extends StatelessWidget {
   final String runId;
   const _ReceiptBarcode({required this.runId});

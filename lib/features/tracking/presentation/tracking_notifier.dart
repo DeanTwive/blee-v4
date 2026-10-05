@@ -19,12 +19,13 @@ class TrackingNotifier extends Notifier<TrackingState> {
   StreamSubscription<StepData>? _stepSub;
   Timer? _oneSecondTimer;
   Timer? _demoTimer;
+  Timer? _webLocationTimer;
 
   // Monotonic time tracking
   final Stopwatch _monotonicStopwatch = Stopwatch();
   int _movingMs = 0;
   int _lastMovingTickMs = 0;
-  late final int _epochId;
+  int _epochId = 0;
 
   // Telemetry smoothing & auto-pause state
   double _smoothedSpeedMps = 0.0;
@@ -139,9 +140,9 @@ class TrackingNotifier extends Notifier<TrackingState> {
         ? await compute(GpsFilter.findPeakKm, points)
         : null;
 
-    final avgPace = movingSec > 0 && distanceMeters > 0
+    final avgPace = (movingSec > 0 && distanceMeters >= 10.0)
         ? (movingSec / (distanceMeters / 1000.0))
-        : 330.0;
+        : 0.0;
 
     return RunSummaryEntity(
       runId: runId,
@@ -151,7 +152,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
       durationSeconds: elapsedSec > 0 ? elapsedSec : movingSec,
       movingSeconds: movingSec,
       avgPaceSecondsPerKm: avgPace,
-      peakKmPaceSecondsPerKm: peakResult?.paceSecondsPerKm ?? (avgPace * 0.95),
+      peakKmPaceSecondsPerKm: peakResult?.paceSecondsPerKm ?? (avgPace > 0 ? avgPace * 0.95 : 0.0),
       peakKmIndex: peakResult?.peakKmIndex ?? 1,
       elevationGainMeters: gain,
       elevationLossMeters: loss,
@@ -227,6 +228,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
     if (state.isActive) return;
 
     final runId = const Uuid().v4();
+    _epochId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     state = TrackingState(
       status: TrackingStatus.acquiring,
       runId: runId,
@@ -265,6 +267,26 @@ class TrackingNotifier extends Notifier<TrackingState> {
       monotonicMs: _monotonicStopwatch.elapsedMilliseconds,
       timestamp: DateTime.now(),
     ));
+
+    // Short loading window (~1.5s): transition immediately into running state
+    // so runner never gets held back by delayed satellite/browser fixes.
+    Timer(const Duration(milliseconds: 1500), () {
+      completeAcquisitionAndRun();
+    });
+  }
+
+  void completeAcquisitionAndRun() {
+    if (state.status == TrackingStatus.acquiring) {
+      state = state.copyWith(
+        status: TrackingStatus.running,
+        gpsConfidence: state.gpsConfidence.isEmpty ? 'High' : state.gpsConfidence,
+      );
+    }
+  }
+
+  void cancelAcquisition() {
+    _cleanup();
+    state = const TrackingState(status: TrackingStatus.idle);
   }
 
   void pauseRun() {
@@ -309,40 +331,77 @@ class TrackingNotifier extends Notifier<TrackingState> {
     final breadcrumbs = List<BreadcrumbPoint>.from(state.breadcrumbs);
     final distanceM = state.distanceMeters;
     final movingSec = state.movingSeconds > 0 ? state.movingSeconds : state.elapsedSeconds;
-    final elapsedSec = state.elapsedSeconds;
+    final elapsedSec = state.elapsedSeconds > 0 ? state.elapsedSeconds : movingSec;
+
+    final currentLat = state.currentLatitude;
+    final currentLng = state.currentLongitude;
+    final currentAlt = state.currentAltitude;
+    final currentAcc = state.currentAccuracyMeters;
 
     _cleanup();
     _flushBatch();
 
     state = const TrackingState(status: TrackingStatus.stopped);
 
+    final startedAt = breadcrumbs.isNotEmpty
+        ? breadcrumbs.first.timestamp
+        : DateTime.now().subtract(Duration(seconds: elapsedSec > 0 ? elapsedSec : 1));
+    final endedAt = DateTime.now();
+
     await _gpsRepo.updateRunRecord(
       runId: runId,
       status: 'completed',
-      startedAt: breadcrumbs.isNotEmpty ? breadcrumbs.first.timestamp : DateTime.now(),
-      endedAt: DateTime.now(),
+      startedAt: startedAt,
+      endedAt: endedAt,
       elapsedMs: elapsedSec * 1000,
       movingMs: movingSec * 1000,
       distanceMeters: distanceM,
       totalSteps: _totalSteps,
     );
 
-    if (breadcrumbs.length < 2 && distanceM <= 0) return null;
+    // Ensure at least one breadcrumb exists for summary visualization
+    if (breadcrumbs.isEmpty && currentLat != null && currentLng != null) {
+      breadcrumbs.add(BreadcrumbPoint(
+        runId: runId,
+        epochId: _epochId,
+        latitude: currentLat,
+        longitude: currentLng,
+        altitude: currentAlt,
+        accuracy: currentAcc ?? 5.0,
+        dopplerSpeed: 0.0,
+        hardwareSteps: _totalSteps,
+        monotonicMs: _monotonicStopwatch.elapsedMilliseconds,
+        timestamp: endedAt,
+      ));
+    }
 
-    final peakResult = await compute(GpsFilter.findPeakKm, breadcrumbs);
-    final avgPace = movingSec > 0 && distanceM > 0
+    // Safely compute peak km without web isolate crashes
+    ({int peakKmIndex, double paceSecondsPerKm})? peakResult;
+    try {
+      if (breadcrumbs.length >= 2) {
+        if (kIsWeb || breadcrumbs.length < 200) {
+          peakResult = GpsFilter.findPeakKm(breadcrumbs);
+        } else {
+          peakResult = await compute(GpsFilter.findPeakKm, breadcrumbs);
+        }
+      }
+    } catch (e) {
+      debugPrint('[stopRun] findPeakKm calculation skipped: $e');
+    }
+
+    final avgPace = (movingSec > 0 && distanceM >= 10.0)
         ? (movingSec / (distanceM / 1000.0))
-        : 330.0;
+        : 0.0;
 
-    return RunSummaryEntity(
+    final summary = RunSummaryEntity(
       runId: runId,
-      startedAt: breadcrumbs.isNotEmpty ? breadcrumbs.first.timestamp : DateTime.now(),
-      endedAt: DateTime.now(),
+      startedAt: startedAt,
+      endedAt: endedAt,
       distanceMeters: distanceM,
-      durationSeconds: elapsedSec,
+      durationSeconds: elapsedSec > 0 ? elapsedSec : (movingSec > 0 ? movingSec : 1),
       movingSeconds: movingSec,
       avgPaceSecondsPerKm: avgPace,
-      peakKmPaceSecondsPerKm: peakResult?.paceSecondsPerKm ?? (avgPace * 0.95),
+      peakKmPaceSecondsPerKm: peakResult?.paceSecondsPerKm ?? (avgPace > 0 ? avgPace * 0.95 : 0.0),
       peakKmIndex: peakResult?.peakKmIndex ?? 1,
       elevationGainMeters: _cumulativeGainMeters,
       elevationLossMeters: _cumulativeLossMeters,
@@ -353,6 +412,32 @@ class TrackingNotifier extends Notifier<TrackingState> {
       splits: _splits,
       breadcrumbs: breadcrumbs,
     );
+
+    // Reset tracking state to idle so subsequent visits to Tracker start cleanly
+    state = const TrackingState(status: TrackingStatus.idle);
+    return summary;
+  }
+
+  /// Discards the currently active or paused run and purges all recorded telemetry.
+  Future<void> discardCurrentRun() async {
+    final runId = state.runId;
+    _cleanup();
+    _pendingTelemetryBatch.clear();
+    if (runId != null) {
+      try {
+        await _gpsRepo.deleteBreadcrumbs(runId);
+      } catch (e) {
+        debugPrint('[discardCurrentRun] Error purging run $runId: $e');
+      }
+    }
+    _resetTelemetryVariables();
+    state = const TrackingState(status: TrackingStatus.idle);
+  }
+
+  /// Resets the tracker back to idle ready-to-run state.
+  void resetToIdle() {
+    _cleanup();
+    state = const TrackingState(status: TrackingStatus.idle);
   }
 
   /// Starts a synthetic demo run simulating realistic cadence, hills, and splits.
@@ -463,6 +548,26 @@ class TrackingNotifier extends Notifier<TrackingState> {
         );
       },
     );
+
+    // Prompt immediate fix on web / stationary devices so we don't wait for physical movement
+    _gpsRepo.getCurrentPosition().then((pos) {
+      if (pos != null && (state.status == TrackingStatus.acquiring || state.status == TrackingStatus.running)) {
+        _onPosition(pos);
+      }
+    });
+
+    // In web browsers, watchPosition can be throttled or delayed.
+    // Periodic polling ensures continuous GPS updates every 2 seconds.
+    if (kIsWeb) {
+      _webLocationTimer?.cancel();
+      _webLocationTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+        if (!state.isActive) return;
+        final pos = await _gpsRepo.getCurrentPosition();
+        if (pos != null && state.isActive) {
+          _onPosition(pos);
+        }
+      });
+    }
   }
 
   void _startStepTracking() {
@@ -528,10 +633,11 @@ class TrackingNotifier extends Notifier<TrackingState> {
     final nowMonotonicMs = _monotonicStopwatch.elapsedMilliseconds;
 
     // 1. Adaptive Accuracy Gate
+    final fixAccuracy = (kIsWeb && pos.accuracy <= 0) ? 5.0 : pos.accuracy;
     final validation = GpsFilter.validateFix(
       latitude: pos.latitude,
       longitude: pos.longitude,
-      accuracy: pos.accuracy,
+      accuracy: fixAccuracy,
       speedMetersPerSec: pos.speed > 0 ? pos.speed : null,
     );
 
@@ -562,15 +668,12 @@ class TrackingNotifier extends Notifier<TrackingState> {
 
     final gpsConfidence = validation.isNoisy ? 'Medium' : 'High';
 
-    // 2. Doppler Speed 1-Pole Low-Pass Filter
-    final rawSpeed = pos.speed >= 0 ? pos.speed : 0.0;
-    _smoothedSpeedMps = GpsFilter.filterDopplerSpeed(rawSpeed, _smoothedSpeedMps);
+    // 2. Speed Calculation (Hardware Doppler or Physical Displacement)
+    double currentSpeedMps = pos.speed > 0 ? pos.speed : 0.0;
 
-    // 3. Asymmetric Auto-Pause Hysteresis
-    _evaluateAutoPause(_smoothedSpeedMps, nowMonotonicMs);
-
-    // 4. Distance & Coordinate Accumulation
+    // 3. Distance & Coordinate Accumulation
     double addedDist = 0.0;
+    bool hasDisplacement = false;
     if (_lastValidLat != null && _lastValidLng != null) {
       final delta = GpsFilter.haversineDistance(
         _lastValidLat!,
@@ -579,21 +682,46 @@ class TrackingNotifier extends Notifier<TrackingState> {
         pos.longitude,
       );
 
-      // Only accumulate distance if moving and passes delta threshold
-      if (!_isAutoPaused && state.status == TrackingStatus.running && delta >= GpsFilter.minDistanceDeltaMeters) {
-        addedDist = delta;
+      // If coordinate displaced by >= minDistanceDeltaMeters (1.2m), runner has physically moved
+      if (delta >= GpsFilter.minDistanceDeltaMeters) {
+        hasDisplacement = true;
+        if (_isAutoPaused) {
+          _isAutoPaused = false;
+          _consecutiveSlowSeconds = 0;
+          _lastMovingTickMs = nowMonotonicMs;
+          _gpsRepo.logEvent(RunEvent(
+            runId: state.runId!,
+            epochId: _epochId,
+            eventType: 'auto_resume',
+            monotonicMs: nowMonotonicMs,
+            timestamp: DateTime.now(),
+          ));
+        }
+        if (state.status == TrackingStatus.running) {
+          addedDist = delta;
+        }
       }
     }
 
     _lastValidLat = pos.latitude;
     _lastValidLng = pos.longitude;
 
-    // 5. Continuous Altitude & 2.0m Anchor Hysteresis
+    if (currentSpeedMps <= 0 && addedDist > 0) {
+      final dt = (nowMonotonicMs - _lastMovingTickMs) / 1000.0;
+      if (dt > 0.1 && dt < 10.0) {
+        currentSpeedMps = addedDist / dt;
+      }
+    }
+
+    _smoothedSpeedMps = GpsFilter.filterDopplerSpeed(currentSpeedMps, _smoothedSpeedMps);
+    _evaluateAutoPause(_smoothedSpeedMps, nowMonotonicMs, hasDisplacement: hasDisplacement);
+
+    // 4. Continuous Altitude & 2.0m Anchor Hysteresis
     _handleAltitude(pos.altitude, addedDist);
 
     final newDistance = state.distanceMeters + addedDist;
 
-    // 6. Rolling 10s Live Pace Window
+    // 5. Rolling 10s Live Pace Window
     _rollingPaceWindow.add((distance: addedDist, timestampMs: nowMonotonicMs));
     _rollingPaceWindow.removeWhere((w) => nowMonotonicMs - w.timestampMs > 10000);
 
@@ -603,9 +731,9 @@ class TrackingNotifier extends Notifier<TrackingState> {
     }
     final livePaceSec = (rollingDist > 2.0 && !_isAutoPaused)
         ? (10.0 / (rollingDist / 1000.0))
-        : 0.0;
+        : (newDistance > 5.0 && _movingMs > 1000 ? (_movingMs / 1000.0) / (newDistance / 1000.0) : 0.0);
 
-    // 7. 40m Windowed Grade & Minetti GAP
+    // 6. 40m Windowed Grade & Minetti GAP
     final gradient = _calculate40mWindowGradient(newDistance, pos.altitude);
     final gapPace = (newDistance >= GpsFilter.minGapDistanceWarmupMeters && livePaceSec > 0)
         ? GpsFilter.calculateMinettiGap(
@@ -614,7 +742,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
           )
         : livePaceSec;
 
-    // 8. Dual-Speed ACSM Metabolic Calorie Calculation
+    // 7. Dual-Speed ACSM Metabolic Calorie Calculation
     if (!_isAutoPaused && state.status == TrackingStatus.running) {
       _cumulativeCalories += GpsFilter.calculateAcsmKcalBurnPerSecond(
         speedMps: _smoothedSpeedMps,
@@ -623,7 +751,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
       );
     }
 
-    // 9. 1 km Auto-Split Check
+    // 8. 1 km Auto-Split Check
     _checkSplit(newDistance, pos.altitude);
 
     final newPoint = BreadcrumbPoint(
@@ -664,7 +792,19 @@ class TrackingNotifier extends Notifier<TrackingState> {
     );
   }
 
-  void _evaluateAutoPause(double speedMps, int monotonicMs) {
+  void _evaluateAutoPause(double speedMps, int monotonicMs, {required bool hasDisplacement}) {
+    if (kIsWeb) {
+      // Browsers do not report Doppler speed. Auto-pause on Web is disabled to avoid freezing distance.
+      return;
+    }
+    if (hasDisplacement) {
+      _consecutiveSlowSeconds = 0;
+      if (_isAutoPaused) {
+        _isAutoPaused = false;
+        _lastMovingTickMs = monotonicMs;
+      }
+      return;
+    }
     if (speedMps < GpsFilter.autoPauseThresholdMps) {
       _consecutiveSlowSeconds++;
       if (_consecutiveSlowSeconds >= GpsFilter.autoPauseSustainedSeconds && !_isAutoPaused) {
@@ -830,6 +970,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _oneSecondTimer = null;
     _demoTimer?.cancel();
     _demoTimer = null;
+    _webLocationTimer?.cancel();
+    _webLocationTimer = null;
     _positionSub?.cancel();
     _positionSub = null;
     _stepSub?.cancel();

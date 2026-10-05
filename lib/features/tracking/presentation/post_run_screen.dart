@@ -2,16 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_typography.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/utils/geo_math.dart';
 import '../../../core/widgets/bouncy_pressable.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../domain/run_summary_entity.dart';
 import '../domain/run_history_provider.dart';
 import '../../run_receipt/presentation/run_receipt_widget.dart';
 import '../../run_receipt/presentation/run_receipt_notifier.dart';
+import 'tracking_notifier.dart';
+import 'widgets/strava_run_map.dart';
+import 'widgets/strava_share_dialog.dart';
 
 class PostRunScreen extends ConsumerStatefulWidget {
   final RunSummaryEntity summary;
@@ -21,50 +26,163 @@ class PostRunScreen extends ConsumerStatefulWidget {
   ConsumerState<PostRunScreen> createState() => _PostRunScreenState();
 }
 
-class _PostRunScreenState extends ConsumerState<PostRunScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animController;
-  late final Animation<double> _scaleAnim;
-  late final Animation<double> _fadeAnim;
+class _PostRunScreenState extends ConsumerState<PostRunScreen> {
+  late final TextEditingController _titleController;
+  final ImagePicker _picker = ImagePicker();
+  Uint8List? _photoBytes;
   int _selectedRpe = 5;
 
   @override
   void initState() {
     super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 280),
-    );
-    _scaleAnim = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOut),
-    );
-    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOut),
-    );
-    _animController.forward();
+    _titleController = TextEditingController(text: widget.summary.displayTitle);
+    _photoBytes = widget.summary.imageBytes;
+    _selectedRpe = widget.summary.rpe ?? 5;
 
     // Auto-save completed run to the runner's history and dashboard
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(runHistoryNotifierProvider.notifier)
-          .addRun(widget.summary.copyWith(rpe: _selectedRpe));
+      _saveCurrentRun();
     });
   }
 
   @override
   void dispose() {
-    _animController.dispose();
+    _titleController.dispose();
     super.dispose();
+  }
+
+  RunSummaryEntity get _currentSummary => widget.summary.copyWith(
+        rpe: _selectedRpe,
+        title: _titleController.text.trim(),
+        imageBytes: _photoBytes,
+      );
+
+  void _saveCurrentRun() {
+    ref.read(runHistoryNotifierProvider.notifier).addRun(_currentSummary);
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    try {
+      final xFile = await _picker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 90,
+      );
+      if (xFile != null) {
+        final bytes = await xFile.readAsBytes();
+        setState(() {
+          _photoBytes = bytes;
+        });
+        _saveCurrentRun();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load image: $e')),
+        );
+      }
+    }
+  }
+
+  void _removePhoto() {
+    setState(() {
+      _photoBytes = null;
+    });
+    ref.read(runHistoryNotifierProvider.notifier).addRun(
+          widget.summary.copyWith(
+            rpe: _selectedRpe,
+            title: _titleController.text.trim(),
+            clearImage: true,
+          ),
+        );
   }
 
   void _onRpeChanged(int rpe) {
     HapticFeedback.selectionClick();
     setState(() => _selectedRpe = rpe);
+    _saveCurrentRun();
+  }
+
+  void _openStravaShare() {
+    _saveCurrentRun();
+    final runnerName = ref.read(currentProfileProvider).value?.displayName ?? 'Runner';
+    StravaShareDialog.show(
+      context,
+      run: _currentSummary,
+      runnerName: runnerName,
+      initialImageBytes: _photoBytes,
+    );
   }
 
   Future<void> _shareReceipt() async {
-    final finalSummary = widget.summary.copyWith(rpe: _selectedRpe);
+    final finalSummary = _currentSummary;
     await ref.read(runReceiptNotifierProvider.notifier).shareReceipt(finalSummary);
+  }
+
+  void _confirmDiscard(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          side: const BorderSide(color: AppColors.surfaceBorder),
+        ),
+        title: const Text(
+          'Discard Activity?',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w900,
+            fontSize: 18,
+          ),
+        ),
+        content: const Text(
+          'Are you sure you want to discard this run? It will be permanently removed and not saved to your profile.',
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text(
+              'KEEP ACTIVITY',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              ref.read(runHistoryNotifierProvider.notifier).removeRun(widget.summary.runId);
+              ref.read(trackingNotifierProvider.notifier).resetToIdle();
+              context.go(Routes.home);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Activity discarded'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+              ),
+            ),
+            child: const Text(
+              'DISCARD',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -101,7 +219,17 @@ class _PostRunScreenState extends ConsumerState<PostRunScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => context.go(Routes.home),
+            onPressed: () => _confirmDiscard(context),
+            child: const Text(
+              'Discard',
+              style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w600),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              ref.read(trackingNotifierProvider.notifier).resetToIdle();
+              context.go(Routes.home);
+            },
             child: const Text('Done'),
           ),
         ],
@@ -111,6 +239,196 @@ class _PostRunScreenState extends ConsumerState<PostRunScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Strava Activity Title Input ──────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                border: Border.all(color: AppColors.surfaceBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'ACTIVITY TITLE',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  TextField(
+                    controller: _titleController,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Morning 5K at Track 30th',
+                      hintStyle: TextStyle(color: AppColors.textTertiary.withValues(alpha: 0.6)),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                      border: InputBorder.none,
+                      suffixIcon: const Icon(Icons.edit_rounded, color: AppColors.primary, size: 18),
+                    ),
+                    onChanged: (_) => _saveCurrentRun(),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: AppSpacing.md),
+
+            // ── Strava Photo Attachment Card ─────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                border: Border.all(color: AppColors.surfaceBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'PHOTOS & MEMORIES',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      if (_photoBytes != null)
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.danger,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                          ),
+                          onPressed: _removePhoto,
+                          child: const Text('Remove', style: TextStyle(fontSize: 12)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+
+                  if (_photoBytes != null) ...[
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                          child: Image.memory(
+                            _photoBytes!,
+                            height: 190,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 10,
+                          right: 10,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.black.withValues(alpha: 0.75),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            icon: const Icon(Icons.photo_library_rounded, size: 14),
+                            label: const Text('Change', style: TextStyle(fontSize: 12)),
+                            onPressed: () => _pickPhoto(ImageSource.gallery),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    InkWell(
+                      onTap: () => _pickPhoto(ImageSource.gallery),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceBase,
+                          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                          border: Border.all(
+                            color: AppColors.surfaceBorderLight,
+                            style: BorderStyle.solid,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.add_a_photo_rounded, color: AppColors.primary, size: 22),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Add Photo to Workout',
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  'Your photo will appear behind your stats graphic',
+                                  style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            const SizedBox(height: AppSpacing.md),
+
+            // ── Strava Route Map ──────────────────────────────────────────
+            if (summary.breadcrumbs.isNotEmpty) ...[
+              Container(
+                height: 200,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                  border: Border.all(color: AppColors.surfaceBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: StravaRunMap(
+                  breadcrumbs: summary.breadcrumbs,
+                  isInteractive: true,
+                  showLivePuck: false,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
             // ── Quick stats ────────────────────────────────────────────────
             _RunStatRow(summary: summary),
             if (summary.splits.isNotEmpty) ...[
@@ -136,40 +454,101 @@ class _PostRunScreenState extends ConsumerState<PostRunScreen>
             ),
             const SizedBox(height: AppSpacing.xl),
 
-            // ── Run Receipt ────────────────────────────────────────────────
-            Text('Your Run Receipt', style: AppTypography.titleMedium),
-            const SizedBox(height: AppSpacing.md),
-            FadeTransition(
-              opacity: _fadeAnim,
-              child: ScaleTransition(
-                scale: _scaleAnim,
-                child: RunReceiptWidget(
-                  summary: summary.copyWith(rpe: _selectedRpe),
+            // ── Primary Action: Strava Graphic Share ─────────────────────────
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  ),
+                  elevation: 4,
+                ),
+                icon: const Icon(Icons.share_rounded, size: 20),
+                label: const Text(
+                  'SHARE WORKOUT GRAPHIC',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 0.8),
+                ),
+                onPressed: _openStravaShare,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+
+            // ── Secondary Action: Save & Done ────────────────────────────────
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textPrimary,
+                  side: const BorderSide(color: AppColors.surfaceBorder),
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  ),
+                ),
+                onPressed: () {
+                  _saveCurrentRun();
+                  ref.read(trackingNotifierProvider.notifier).resetToIdle();
+                  context.go(Routes.home);
+                },
+                child: const Text(
+                  'SAVE & GO TO DASHBOARD',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, letterSpacing: 0.5),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.danger,
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                ),
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                onPressed: () => _confirmDiscard(context),
+                label: const Text(
+                  'DISCARD ACTIVITY',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ),
 
-            const SizedBox(height: AppSpacing.xl),
+            const SizedBox(height: AppSpacing.lg),
 
-            // Share button
-            BouncyPressable(
-              onTap: receiptState.isSharing ? null : _shareReceipt,
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: receiptState.isSharing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.onPrimary,
-                          ),
-                        )
-                      : const Icon(Icons.share_rounded, size: 20),
-                  label: Text(receiptState.isSharing ? 'Preparing...' : 'SHARE RUN RECEIPT'),
-                  onPressed: receiptState.isSharing ? null : _shareReceipt,
+            // ── Collapsible Receipt Export (Optional) ────────────────────────
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: Text(
+                  'View Novelty Run Receipt',
+                  style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
                 ),
+                children: [
+                  RunReceiptWidget(
+                    summary: _currentSummary,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  BouncyPressable(
+                    onTap: receiptState.isSharing ? null : _shareReceipt,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                        label: Text(receiptState.isSharing ? 'Preparing...' : 'SHARE RECEIPT IMAGE'),
+                        onPressed: receiptState.isSharing ? null : _shareReceipt,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
 
