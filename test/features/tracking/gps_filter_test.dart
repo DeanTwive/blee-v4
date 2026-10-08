@@ -17,12 +17,12 @@ void main() {
       );
     });
 
-    test('isValid rejects accuracy exceeding maxAccuracyMeters (30m)', () {
+    test('isValid rejects accuracy exceeding maxAccuracyMeters (35m)', () {
       expect(
         GpsFilter.isValid(
           latitude: 14.5547,
           longitude: 121.0494,
-          accuracy: 35.0,
+          accuracy: 40.0,
         ),
         isFalse,
       );

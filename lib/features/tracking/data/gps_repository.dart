@@ -73,10 +73,21 @@ class GpsRepository implements IGpsRepository {
                   accuracy: LocationAccuracy.high,
                   distanceFilter: 0,
                 )
-              : const LocationSettings(
-                  accuracy: LocationAccuracy.bestForNavigation,
-                  distanceFilter: 0,
-                )),
+              : defaultTargetPlatform == TargetPlatform.android
+                  ? AndroidSettings(
+                      accuracy: LocationAccuracy.bestForNavigation,
+                      distanceFilter: 0,
+                      intervalDuration: const Duration(seconds: 1),
+                      foregroundNotificationConfig: const ForegroundNotificationConfig(
+                        notificationTitle: 'Blee Running Tracker',
+                        notificationText: 'Tracking your run in the background',
+                        enableWakeLock: true,
+                      ),
+                    )
+                  : const LocationSettings(
+                      accuracy: LocationAccuracy.bestForNavigation,
+                      distanceFilter: 0,
+                    )),
     );
   }
 

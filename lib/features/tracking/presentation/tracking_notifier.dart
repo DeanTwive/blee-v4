@@ -20,6 +20,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
   Timer? _oneSecondTimer;
   Timer? _demoTimer;
   Timer? _webLocationTimer;
+  Timer? _acquisitionTimer;
 
   // Monotonic time tracking
   final Stopwatch _monotonicStopwatch = Stopwatch();
@@ -66,11 +67,16 @@ class TrackingNotifier extends Notifier<TrackingState> {
   // Synthetic demo variables
   int _demoStep = 0;
 
-  IGpsRepository get _gpsRepo => ref.read(gpsRepositoryProvider);
-  StepCadenceRepository get _stepRepo => ref.read(stepCadenceRepositoryProvider);
+  IGpsRepository? _cachedGpsRepo;
+  StepCadenceRepository? _cachedStepRepo;
+
+  IGpsRepository get _gpsRepo => _cachedGpsRepo ?? ref.read(gpsRepositoryProvider);
+  StepCadenceRepository get _stepRepo => _cachedStepRepo ?? ref.read(stepCadenceRepositoryProvider);
 
   @override
   TrackingState build() {
+    _cachedGpsRepo = ref.read(gpsRepositoryProvider);
+    _cachedStepRepo = ref.read(stepCadenceRepositoryProvider);
     _epochId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     ref.onDispose(_cleanup);
     Future.microtask(() => checkUnfinishedRun());
@@ -82,6 +88,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
   Future<void> checkUnfinishedRun() async {
     try {
       final unfinished = await _gpsRepo.getUnfinishedRun();
+      if (!ref.mounted) return;
       if (unfinished != null && state.status == TrackingStatus.idle) {
         state = state.copyWith(unfinishedRun: unfinished);
       }
@@ -236,6 +243,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
     );
 
     final permission = await _gpsRepo.requestPermission();
+    if (!ref.mounted) return;
     if (!permission) {
       state = state.copyWith(
         status: TrackingStatus.idle,
@@ -259,6 +267,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
       distanceMeters: 0,
       totalSteps: 0,
     );
+    if (!ref.mounted) return;
 
     await _gpsRepo.logEvent(RunEvent(
       runId: runId,
@@ -267,15 +276,19 @@ class TrackingNotifier extends Notifier<TrackingState> {
       monotonicMs: _monotonicStopwatch.elapsedMilliseconds,
       timestamp: DateTime.now(),
     ));
+    if (!ref.mounted) return;
 
     // Short loading window (~1.5s): transition immediately into running state
     // so runner never gets held back by delayed satellite/browser fixes.
-    Timer(const Duration(milliseconds: 1500), () {
+    _acquisitionTimer?.cancel();
+    _acquisitionTimer = Timer(const Duration(milliseconds: 1500), () {
+      _acquisitionTimer = null;
       completeAcquisitionAndRun();
     });
   }
 
   void completeAcquisitionAndRun() {
+    if (!ref.mounted) return;
     if (state.status == TrackingStatus.acquiring) {
       state = state.copyWith(
         status: TrackingStatus.running,
@@ -312,6 +325,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _positionSub?.resume();
     _isAutoPaused = false;
     _lastMovingTickMs = _monotonicStopwatch.elapsedMilliseconds;
+    _lastValidLat = null;
+    _lastValidLng = null;
 
     state = state.copyWith(status: TrackingStatus.running, isAutoPaused: false);
 
@@ -413,8 +428,12 @@ class TrackingNotifier extends Notifier<TrackingState> {
       breadcrumbs: breadcrumbs,
     );
 
-    // Reset tracking state to idle so subsequent visits to Tracker start cleanly
-    state = const TrackingState(status: TrackingStatus.idle);
+    if (kDebugMode) {
+      debugPrint('[BLEE_DIAG] stopRun: finished run=$runId, dist=${distanceM.toStringAsFixed(1)}m, points=${breadcrumbs.length}');
+    }
+
+    // Keep tracking state as stopped so UI transitions smoothly to PostRunScreen without triggering the acquiring trap.
+    state = const TrackingState(status: TrackingStatus.stopped);
     return summary;
   }
 
@@ -674,6 +693,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
     // 3. Distance & Coordinate Accumulation
     double addedDist = 0.0;
     bool hasDisplacement = false;
+    final bool wasAutoPaused = _isAutoPaused;
+
     if (_lastValidLat != null && _lastValidLng != null) {
       final delta = GpsFilter.haversineDistance(
         _lastValidLat!,
@@ -697,14 +718,22 @@ class TrackingNotifier extends Notifier<TrackingState> {
             timestamp: DateTime.now(),
           ));
         }
-        if (state.status == TrackingStatus.running) {
+        if (state.status == TrackingStatus.running || wasAutoPaused) {
           addedDist = delta;
         }
+        // Advance baseline anchor only when physical displacement threshold is reached
+        _lastValidLat = pos.latitude;
+        _lastValidLng = pos.longitude;
       }
+    } else {
+      // First valid fix establishes the initial baseline anchor
+      _lastValidLat = pos.latitude;
+      _lastValidLng = pos.longitude;
     }
 
-    _lastValidLat = pos.latitude;
-    _lastValidLng = pos.longitude;
+    if (kDebugMode) {
+      debugPrint('[BLEE_DIAG] fix: acc=${pos.accuracy.toStringAsFixed(1)}m, spd=${pos.speed.toStringAsFixed(2)}m/s, delta=${hasDisplacement ? addedDist.toStringAsFixed(2) : "0.0"}m, totalDist=${(state.distanceMeters + addedDist).toStringAsFixed(1)}m, paused=$_isAutoPaused');
+    }
 
     if (currentSpeedMps <= 0 && addedDist > 0) {
       final dt = (nowMonotonicMs - _lastMovingTickMs) / 1000.0;
@@ -965,6 +994,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
   }
 
   void _cleanup() {
+    _acquisitionTimer?.cancel();
+    _acquisitionTimer = null;
     _monotonicStopwatch.stop();
     _oneSecondTimer?.cancel();
     _oneSecondTimer = null;

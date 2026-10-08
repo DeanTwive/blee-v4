@@ -17,6 +17,14 @@ import '../../tracking/presentation/tracking_notifier.dart';
 import '../domain/clubs_provider.dart';
 import '../domain/community_events_provider.dart';
 
+void _launchTrackerSafely(BuildContext context, WidgetRef ref) {
+  final trackingState = ref.read(trackingNotifierProvider);
+  if (!trackingState.isActive && trackingState.unfinishedRun == null) {
+    ref.read(trackingNotifierProvider.notifier).startRun();
+  }
+  context.push(Routes.tracking);
+}
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -385,17 +393,11 @@ class _DashboardTab extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.xl),
               BouncyPressable(
-                onTap: () {
-                  ref.read(trackingNotifierProvider.notifier).startRun();
-                  context.push(Routes.tracking);
-                },
+                onTap: () => _launchTrackerSafely(context, ref),
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.play_arrow_rounded, size: 28),
                   label: const Text('START RUN'),
-                  onPressed: () {
-                    ref.read(trackingNotifierProvider.notifier).startRun();
-                    context.push(Routes.tracking);
-                  },
+                  onPressed: () => _launchTrackerSafely(context, ref),
                 ),
               ),
             ],
@@ -736,10 +738,7 @@ class _TrackTab extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.xxl),
               BouncyPressable(
-                onTap: () {
-                  ref.read(trackingNotifierProvider.notifier).startRun();
-                  context.push(Routes.tracking);
-                },
+                onTap: () => _launchTrackerSafely(context, ref),
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
@@ -754,10 +753,7 @@ class _TrackTab extends ConsumerWidget {
                     'LAUNCH GPS TRACKER',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                   ),
-                  onPressed: () {
-                    ref.read(trackingNotifierProvider.notifier).startRun();
-                    context.push(Routes.tracking);
-                  },
+                  onPressed: () => _launchTrackerSafely(context, ref),
                 ),
               ),
             ],

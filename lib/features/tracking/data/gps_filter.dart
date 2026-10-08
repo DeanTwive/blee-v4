@@ -25,9 +25,9 @@ class GpsValidationResult {
 /// dual-speed ACSM energy modeling, and RDP polyline decimation.
 abstract final class GpsFilter {
   // Gating & Speed Constants
-  static const double maxAcceptableAccuracyMeters = 25.0;
+  static const double maxAcceptableAccuracyMeters = 35.0;
   static const double maxWebAcceptableAccuracyMeters = 1000.0;
-  static const double maxAccuracyMeters = 30.0;
+  static const double maxAccuracyMeters = 35.0;
   static const double cleanAccuracyThresholdMeters = 15.0;
   static const double maxSpeedMetersPerSec = 12.5; // 45 km/h
   static const double minDistanceDeltaMeters = 1.2;

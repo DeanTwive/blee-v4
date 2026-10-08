@@ -22,11 +22,13 @@ class TrackingScreen extends ConsumerStatefulWidget {
 
 class _TrackingScreenState extends ConsumerState<TrackingScreen> {
   bool _cancelled = false;
+  bool _isAutoStarting = false;
 
   @override
   void initState() {
     super.initState();
     if (widget.autoStart) {
+      _isAutoStarting = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _cancelled) return;
         final state = ref.read(trackingNotifierProvider);
@@ -35,12 +37,18 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
             state.errorMessage == null) {
           ref.read(trackingNotifierProvider.notifier).startRun();
         }
+        if (mounted) {
+          setState(() => _isAutoStarting = false);
+        }
       });
     }
   }
 
   void _handleCancel() {
-    setState(() => _cancelled = true);
+    setState(() {
+      _cancelled = true;
+      _isAutoStarting = false;
+    });
     ref.read(trackingNotifierProvider.notifier).cancelAcquisition();
     if (context.canPop()) {
       context.pop();
@@ -51,9 +59,9 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(trackingNotifierProvider);
 
-    // If autoStart is active, user has not cancelled, and there is no error or unfinished run,
-    // display _AcquiringView immediately so user never sees _IdleView.
-    final effectiveStatus = (widget.autoStart &&
+    // Only during initial post-frame mount if autoStart is requested,
+    // display _AcquiringView to avoid 1-frame flicker. Never override during active/stopped run.
+    final effectiveStatus = (_isAutoStarting &&
             !_cancelled &&
             state.status == TrackingStatus.idle &&
             state.unfinishedRun == null &&
