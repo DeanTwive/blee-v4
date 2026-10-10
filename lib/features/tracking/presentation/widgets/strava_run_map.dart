@@ -45,24 +45,38 @@ class _StravaRunMapState extends State<StravaRunMap> with SingleTickerProviderSt
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    if (widget.showLivePuck) {
+    if (widget.showLivePuck && widget.isInteractive) {
       _pulseController.repeat(reverse: true);
     }
+    // Center map on runner's actual coordinate as soon as canvas is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        _mapController.move(_currentCenter, 16.0);
+      } catch (_) {}
+    });
   }
 
   @override
   void didUpdateWidget(StravaRunMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // When live tracking, follow the runner smoothly
-    if (widget.showLivePuck && widget.currentLatitude != null && widget.currentLongitude != null) {
-      if (widget.currentLatitude != oldWidget.currentLatitude ||
-          widget.currentLongitude != oldWidget.currentLongitude) {
-        try {
-          _mapController.move(
-            LatLng(widget.currentLatitude!, widget.currentLongitude!),
-            _mapController.camera.zoom,
-          );
-        } catch (_) {}
+    // Smoothly pan camera whenever runner's coordinates update
+    final lat = widget.currentLatitude ?? (widget.breadcrumbs.isNotEmpty ? widget.breadcrumbs.last.latitude : null);
+    final lng = widget.currentLongitude ?? (widget.breadcrumbs.isNotEmpty ? widget.breadcrumbs.last.longitude : null);
+    final oldLat = oldWidget.currentLatitude ?? (oldWidget.breadcrumbs.isNotEmpty ? oldWidget.breadcrumbs.last.latitude : null);
+    final oldLng = oldWidget.currentLongitude ?? (oldWidget.breadcrumbs.isNotEmpty ? oldWidget.breadcrumbs.last.longitude : null);
+
+    if (lat != null && lng != null) {
+      if (lat != oldLat || lng != oldLng || widget.breadcrumbs.length != oldWidget.breadcrumbs.length) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          try {
+            _mapController.move(
+              LatLng(lat, lng),
+              _mapController.camera.zoom,
+            );
+          } catch (_) {}
+        });
       }
     }
   }
@@ -88,10 +102,58 @@ class _StravaRunMapState extends State<StravaRunMap> with SingleTickerProviderSt
     return _defaultCenter;
   }
 
+  List<List<LatLng>> get _polylineSegments {
+    final valid = widget.breadcrumbs.where((p) => !p.isRejected).toList();
+    if (valid.isEmpty) return const [];
+
+    final segments = <List<LatLng>>[];
+    var currentSegment = <LatLng>[LatLng(valid.first.latitude, valid.first.longitude)];
+    const distanceCalc = Distance();
+
+    for (int i = 1; i < valid.length; i++) {
+      final prev = valid[i - 1];
+      final curr = valid[i];
+      final prevLL = LatLng(prev.latitude, prev.longitude);
+      final currLL = LatLng(curr.latitude, curr.longitude);
+      final distMeters = distanceCalc.as(LengthUnit.Meter, prevLL, currLL);
+
+      // If consecutive points are separated by an unnatural jump (> 300m), break segment
+      if (distMeters > 300.0) {
+        if (currentSegment.length >= 2) {
+          segments.add(currentSegment);
+        }
+        currentSegment = [currLL];
+      } else {
+        currentSegment.add(currLL);
+      }
+    }
+
+    if (currentSegment.length >= 2) {
+      segments.add(currentSegment);
+    }
+    return segments;
+  }
+
   List<LatLng> get _polylinePoints {
-    return widget.breadcrumbs
-        .where((p) => !p.isRejected)
-        .map((p) => LatLng(p.latitude, p.longitude))
+    final segments = _polylineSegments;
+    if (segments.isEmpty) {
+      return widget.breadcrumbs
+          .where((p) => !p.isRejected)
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
+    }
+    return segments.expand((s) => s).toList();
+  }
+
+  List<Polyline> _buildPolylines(Color color, double strokeWidth) {
+    return _polylineSegments
+        .map((seg) => Polyline(
+              points: seg,
+              strokeWidth: strokeWidth,
+              color: color,
+              strokeCap: StrokeCap.round,
+              strokeJoin: StrokeJoin.round,
+            ))
         .toList();
   }
 
@@ -118,11 +180,15 @@ class _StravaRunMapState extends State<StravaRunMap> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final segments = _polylineSegments;
     final points = _polylinePoints;
     final currentPos = _currentCenter;
-    final hasRoute = points.length >= 2;
+    final hasRoute = segments.isNotEmpty;
     final effectiveColor = widget.routeColor ?? AppColors.primary;
     final LatLngBounds? bounds = hasRoute ? LatLngBounds.fromPoints(points) : null;
+    final isSensibleBounds = bounds != null &&
+        (bounds.north - bounds.south).abs() < 1.0 &&
+        (bounds.east - bounds.west).abs() < 1.0;
 
     return Stack(
       children: [
@@ -131,8 +197,8 @@ class _StravaRunMapState extends State<StravaRunMap> with SingleTickerProviderSt
           mapController: _mapController,
           options: MapOptions(
             initialCenter: currentPos,
-            initialZoom: hasRoute ? 16.0 : 15.0,
-            initialCameraFit: (!widget.showLivePuck && bounds != null)
+            initialZoom: 16.0,
+            initialCameraFit: (!widget.showLivePuck && isSensibleBounds)
                 ? CameraFit.bounds(
                     bounds: bounds,
                     padding: const EdgeInsets.all(36),
@@ -165,39 +231,15 @@ class _StravaRunMapState extends State<StravaRunMap> with SingleTickerProviderSt
             if (hasRoute) ...[
               // 1. Wide outer ambient halo
               PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: points,
-                    strokeWidth: 10.0,
-                    color: effectiveColor.withValues(alpha: 0.28),
-                    strokeCap: StrokeCap.round,
-                    strokeJoin: StrokeJoin.round,
-                  ),
-                ],
+                polylines: _buildPolylines(effectiveColor.withValues(alpha: 0.28), 10.0),
               ),
               // 2. High-intensity inner neon aura
               PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: points,
-                    strokeWidth: 6.5,
-                    color: effectiveColor.withValues(alpha: 0.65),
-                    strokeCap: StrokeCap.round,
-                    strokeJoin: StrokeJoin.round,
-                  ),
-                ],
+                polylines: _buildPolylines(effectiveColor.withValues(alpha: 0.65), 6.5),
               ),
               // 3. Ultra-sharp solid core polyline
               PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: points,
-                    strokeWidth: 4.0,
-                    color: effectiveColor,
-                    strokeCap: StrokeCap.round,
-                    strokeJoin: StrokeJoin.round,
-                  ),
-                ],
+                polylines: _buildPolylines(effectiveColor, 4.0),
               ),
             ],
 
@@ -205,9 +247,9 @@ class _StravaRunMapState extends State<StravaRunMap> with SingleTickerProviderSt
             MarkerLayer(
               markers: [
                 // 1. Start Marker (Green Flag/Dot)
-                if (hasRoute)
+                if (hasRoute && segments.first.isNotEmpty)
                   Marker(
-                    point: points.first,
+                    point: segments.first.first,
                     width: 32,
                     height: 32,
                     child: Container(

@@ -2,12 +2,16 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'local_run_db.dart';
 import '../domain/run_summary_entity.dart';
 
 abstract class IGpsRepository {
   Future<bool> checkPermission();
   Future<bool> requestPermission();
+  Future<bool> isLocationServiceEnabled();
+  Future<bool> openLocationSettings();
+  Future<bool> openAppSettings();
   Future<Position?> getCurrentPosition();
   Stream<Position> getPositionStream({LocationSettings? settings});
   Future<void> saveBreadcrumb(BreadcrumbPoint point);
@@ -35,6 +39,21 @@ class GpsRepository implements IGpsRepository {
   GpsRepository({LocalRunDb? db}) : _db = db ?? LocalRunDb();
 
   @override
+  Future<bool> isLocationServiceEnabled() async {
+    return Geolocator.isLocationServiceEnabled();
+  }
+
+  @override
+  Future<bool> openLocationSettings() async {
+    return Geolocator.openLocationSettings();
+  }
+
+  @override
+  Future<bool> openAppSettings() async {
+    return Geolocator.openAppSettings();
+  }
+
+  @override
   Future<bool> checkPermission() async {
     final permission = await Geolocator.checkPermission();
     return permission == LocationPermission.always ||
@@ -43,6 +62,20 @@ class GpsRepository implements IGpsRepository {
 
   @override
   Future<bool> requestPermission() async {
+    // 1. On Android 13+ (API 33+), ensure notification permission is requested
+    // so foreground notifications display reliably and do not crash the FGS
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        final notifStatus = await Permission.notification.status;
+        if (!notifStatus.isGranted) {
+          await Permission.notification.request();
+        }
+      } catch (e) {
+        debugPrint('[GpsRepository] Notification permission request error: $e');
+      }
+    }
+
+    // 2. Request Location permission
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();

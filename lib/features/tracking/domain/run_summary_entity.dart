@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../core/utils/geo_math.dart';
 
@@ -267,6 +268,89 @@ class RunSummaryEntity {
       imageBytes: clearImage ? null : (imageBytes ?? this.imageBytes),
     );
   }
+
+  Map<String, dynamic> toMap({bool includeImageBytes = true}) {
+    return {
+      'runId': runId,
+      'startedAt': startedAt.millisecondsSinceEpoch,
+      'endedAt': endedAt.millisecondsSinceEpoch,
+      'distanceMeters': distanceMeters,
+      'durationSeconds': durationSeconds,
+      'movingSeconds': movingSeconds,
+      'avgPaceSecondsPerKm': avgPaceSecondsPerKm,
+      'peakKmPaceSecondsPerKm': peakKmPaceSecondsPerKm,
+      'peakKmIndex': peakKmIndex,
+      'elevationGainMeters': elevationGainMeters,
+      'elevationLossMeters': elevationLossMeters,
+      'totalSteps': totalSteps,
+      'avgCadenceSpm': avgCadenceSpm,
+      'avgStepLengthMeters': avgStepLengthMeters,
+      'estimatedCalories': estimatedCalories,
+      'splits': splits.map((s) => s.toMap()).toList(),
+      'rpe': rpe,
+      'breadcrumbs': breadcrumbs.map((b) => b.toMap()).toList(),
+      'title': title,
+      'imagePath': imagePath,
+      if (includeImageBytes && imageBytes != null && imageBytes!.isNotEmpty)
+        'imageBase64': base64Encode(imageBytes!),
+    };
+  }
+
+  factory RunSummaryEntity.fromMap(Map<String, dynamic> map) {
+    Uint8List? decodedBytes;
+    if (map['imageBase64'] is String && (map['imageBase64'] as String).isNotEmpty) {
+      try {
+        decodedBytes = base64Decode(map['imageBase64'] as String);
+      } catch (_) {}
+    }
+
+    return RunSummaryEntity(
+      runId: (map['runId'] as String?) ?? (map['run_id'] as String?) ?? '',
+      startedAt: map['startedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['startedAt'] as int)
+          : (map['started_at'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(map['started_at'] as int)
+              : DateTime.now()),
+      endedAt: map['endedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['endedAt'] as int)
+          : (map['ended_at'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(map['ended_at'] as int)
+              : DateTime.now()),
+      distanceMeters: (map['distanceMeters'] as num?)?.toDouble() ??
+          (map['distance_meters'] as num?)?.toDouble() ??
+          0.0,
+      durationSeconds: (map['durationSeconds'] as int?) ??
+          (map['duration_seconds'] as int?) ??
+          (map['elapsed_ms'] != null ? (map['elapsed_ms'] as int) ~/ 1000 : 0),
+      movingSeconds: (map['movingSeconds'] as int?) ??
+          (map['moving_ms'] != null ? (map['moving_ms'] as int) ~/ 1000 : 0),
+      avgPaceSecondsPerKm: (map['avgPaceSecondsPerKm'] as num?)?.toDouble() ??
+          (map['avg_pace_seconds_per_km'] as num?)?.toDouble() ??
+          0.0,
+      peakKmPaceSecondsPerKm: (map['peakKmPaceSecondsPerKm'] as num?)?.toDouble(),
+      peakKmIndex: map['peakKmIndex'] as int?,
+      elevationGainMeters: (map['elevationGainMeters'] as num?)?.toDouble() ?? 0.0,
+      elevationLossMeters: (map['elevationLossMeters'] as num?)?.toDouble() ?? 0.0,
+      totalSteps: (map['totalSteps'] as int?) ?? (map['total_steps'] as int?) ?? 0,
+      avgCadenceSpm: (map['avgCadenceSpm'] as num?)?.toDouble() ??
+          (map['avg_cadence_spm'] as num?)?.toDouble() ??
+          0.0,
+      avgStepLengthMeters: (map['avgStepLengthMeters'] as num?)?.toDouble() ?? 0.0,
+      estimatedCalories: (map['estimatedCalories'] as num?)?.toDouble() ?? 0.0,
+      splits: (map['splits'] as List<dynamic>?)
+              ?.map((s) => RunSplit.fromMap(Map<String, dynamic>.from(s as Map)))
+              .toList() ??
+          const [],
+      rpe: map['rpe'] as int?,
+      breadcrumbs: (map['breadcrumbs'] as List<dynamic>?)
+              ?.map((b) => BreadcrumbPoint.fromMap(Map<String, dynamic>.from(b as Map)))
+              .toList() ??
+          const [],
+      title: map['title'] as String?,
+      imagePath: map['imagePath'] as String?,
+      imageBytes: decodedBytes,
+    );
+  }
 }
 
 /// Live in-run tracking state.
@@ -309,6 +393,8 @@ class TrackingState {
   final List<BreadcrumbPoint> breadcrumbs;
   final String? errorMessage;
   final Map<String, dynamic>? unfinishedRun;
+  final double? lastKnownLatitude;
+  final double? lastKnownLongitude;
 
   const TrackingState({
     this.status = TrackingStatus.idle,
@@ -336,12 +422,16 @@ class TrackingState {
     this.breadcrumbs = const [],
     this.errorMessage,
     this.unfinishedRun,
+    this.lastKnownLatitude,
+    this.lastKnownLongitude,
   });
 
   double get distanceKm => distanceMeters / 1000;
   bool get isActive => status == TrackingStatus.running || status == TrackingStatus.paused;
-  double? get currentLatitude => breadcrumbs.isNotEmpty ? breadcrumbs.last.latitude : null;
-  double? get currentLongitude => breadcrumbs.isNotEmpty ? breadcrumbs.last.longitude : null;
+  double? get currentLatitude =>
+      breadcrumbs.isNotEmpty ? breadcrumbs.last.latitude : lastKnownLatitude;
+  double? get currentLongitude =>
+      breadcrumbs.isNotEmpty ? breadcrumbs.last.longitude : lastKnownLongitude;
 
   TrackingState copyWith({
     TrackingStatus? status,
@@ -370,6 +460,8 @@ class TrackingState {
     String? errorMessage,
     Map<String, dynamic>? unfinishedRun,
     bool clearUnfinishedRun = false,
+    double? lastKnownLatitude,
+    double? lastKnownLongitude,
   }) {
     return TrackingState(
       status: status ?? this.status,
@@ -397,6 +489,8 @@ class TrackingState {
       breadcrumbs: breadcrumbs ?? this.breadcrumbs,
       errorMessage: errorMessage,
       unfinishedRun: clearUnfinishedRun ? null : (unfinishedRun ?? this.unfinishedRun),
+      lastKnownLatitude: lastKnownLatitude ?? this.lastKnownLatitude,
+      lastKnownLongitude: lastKnownLongitude ?? this.lastKnownLongitude,
     );
   }
 }

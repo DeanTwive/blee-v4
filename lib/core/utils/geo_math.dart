@@ -95,6 +95,30 @@ abstract final class GeoMath {
       return 'Philippines';
     }
 
+    // United States / California / Silicon Valley (Chrome Sensors & Global)
+    if (lat >= 37.0 && lat <= 38.2 && lng >= -123.0 && lng <= -121.5) {
+      if (lat >= 37.35 && lat <= 37.45 && lng >= -122.15 && lng <= -122.02) {
+        return 'Mountain View, California';
+      }
+      if (lat >= 37.70 && lat <= 37.85 && lng >= -122.55 && lng <= -122.35) {
+        return 'San Francisco, California';
+      }
+      if (lat >= 37.30 && lat <= 37.42 && lng >= -122.08 && lng <= -121.98) {
+        return 'Cupertino, California';
+      }
+      return 'Silicon Valley, California';
+    }
+
+    // New York City
+    if (lat >= 40.55 && lat <= 40.95 && lng >= -74.10 && lng <= -73.70) {
+      return 'New York City, New York';
+    }
+
+    // London, United Kingdom
+    if (lat >= 51.30 && lat <= 51.70 && lng >= -0.50 && lng <= 0.30) {
+      return 'London, United Kingdom';
+    }
+
     // Global major running hubs
     if (lat >= 1.2 && lat <= 1.5 && lng >= 103.6 && lng <= 104.1) {
       return 'Singapore';

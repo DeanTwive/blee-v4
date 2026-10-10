@@ -9,6 +9,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/utils/geo_math.dart';
 import '../../../core/widgets/bouncy_pressable.dart';
 import '../domain/run_summary_entity.dart';
+import '../data/gps_repository.dart';
 import 'tracking_notifier.dart';
 import 'widgets/strava_run_map.dart';
 
@@ -76,6 +77,8 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
           TrackingStatus.idle || TrackingStatus.stopped => _IdleView(
               errorMessage: state.errorMessage,
               unfinishedRun: state.unfinishedRun,
+              latitude: state.currentLatitude ?? state.lastKnownLatitude,
+              longitude: state.currentLongitude ?? state.lastKnownLongitude,
               onStart: () {
                 setState(() => _cancelled = false);
                 ref.read(trackingNotifierProvider.notifier).startRun();
@@ -103,6 +106,8 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
 class _IdleView extends StatelessWidget {
   final String? errorMessage;
   final Map<String, dynamic>? unfinishedRun;
+  final double? latitude;
+  final double? longitude;
   final VoidCallback onStart;
   final VoidCallback? onSimulate;
   final ValueChanged<String>? onResumeUnfinished;
@@ -112,6 +117,8 @@ class _IdleView extends StatelessWidget {
   const _IdleView({
     this.errorMessage,
     this.unfinishedRun,
+    this.latitude,
+    this.longitude,
     required this.onStart,
     this.onSimulate,
     this.onResumeUnfinished,
@@ -169,8 +176,10 @@ class _IdleView extends StatelessWidget {
             children: [
               const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 16),
               const SizedBox(width: AppSpacing.xxs),
-              const Text(
-                'BGC, Manila',
+              Text(
+                (latitude != null && longitude != null)
+                    ? GeoMath.resolveApproximateLocation(latitude!, longitude!)
+                    : 'BGC, Manila',
                 style: AppTypography.bodyMedium,
                 textAlign: TextAlign.center,
               ),
@@ -643,43 +652,64 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // GPS Confidence Pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
-                decoration: BoxDecoration(
-                  color: state.gpsConfidence == 'High'
-                      ? AppColors.primaryMuted
-                      : AppColors.warning.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
-                  border: Border.all(
-                    color: state.gpsConfidence == 'High'
-                        ? AppColors.primary.withValues(alpha: 0.4)
-                        : AppColors.warning.withValues(alpha: 0.5),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.circle,
-                      size: 8,
+              // GPS Confidence Pill + Live Location Label
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
+                    decoration: BoxDecoration(
                       color: state.gpsConfidence == 'High'
-                          ? AppColors.primary
-                          : AppColors.warning,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      'GPS: ${state.gpsConfidence}',
-                      style: AppTypography.caption.copyWith(
+                          ? AppColors.primaryMuted
+                          : AppColors.warning.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
+                      border: Border.all(
                         color: state.gpsConfidence == 'High'
-                            ? AppColors.primary
-                            : AppColors.warning,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 10,
+                            ? AppColors.primary.withValues(alpha: 0.4)
+                            : AppColors.warning.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.circle,
+                          size: 8,
+                          color: state.gpsConfidence == 'High'
+                              ? AppColors.primary
+                              : AppColors.warning,
+                        ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        Text(
+                          'GPS: ${state.gpsConfidence}',
+                          style: AppTypography.caption.copyWith(
+                            color: state.gpsConfidence == 'High'
+                                ? AppColors.primary
+                                : AppColors.warning,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (state.currentLatitude != null && state.currentLongitude != null) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 140),
+                      child: Text(
+                        GeoMath.resolveApproximateLocation(state.currentLatitude!, state.currentLongitude!),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
 
               // Badges & Strava Map Switcher
@@ -842,7 +872,7 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
                         currentLatitude: state.currentLatitude,
                         currentLongitude: state.currentLongitude,
                         isInteractive: false,
-                        showLivePuck: false,
+                        showLivePuck: true,
                       ),
                     ),
                   ),
@@ -1511,6 +1541,9 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isSettingsActionable = message.toLowerCase().contains('settings') ||
+        message.toLowerCase().contains('disabled');
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
@@ -1518,9 +1551,40 @@ class _ErrorBanner extends StatelessWidget {
         vertical: AppSpacing.xs,
       ),
       color: AppColors.danger.withValues(alpha: 0.15),
-      child: Text(
-        message,
-        style: AppTypography.caption.copyWith(color: AppColors.danger),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              message,
+              style: AppTypography.caption.copyWith(color: AppColors.danger),
+            ),
+          ),
+          if (isSettingsActionable)
+            Consumer(
+              builder: (context, ref, _) => TextButton(
+                onPressed: () {
+                  final gpsRepo = ref.read(gpsRepositoryProvider);
+                  if (message.toLowerCase().contains('disabled')) {
+                    gpsRepo.openLocationSettings();
+                  } else {
+                    gpsRepo.openAppSettings();
+                  }
+                },
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                ),
+                child: const Text(
+                  'SETTINGS',
+                  style: TextStyle(
+                    color: AppColors.danger,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

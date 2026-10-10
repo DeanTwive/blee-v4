@@ -79,8 +79,25 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _cachedStepRepo = ref.read(stepCadenceRepositoryProvider);
     _epochId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     ref.onDispose(_cleanup);
-    Future.microtask(() => checkUnfinishedRun());
+    Future.microtask(() {
+      checkUnfinishedRun();
+      _fetchInitialLocation();
+    });
     return const TrackingState();
+  }
+
+  Future<void> _fetchInitialLocation() async {
+    try {
+      final pos = await _gpsRepo.getCurrentPosition();
+      if (pos != null && ref.mounted && state.status == TrackingStatus.idle) {
+        state = state.copyWith(
+          lastKnownLatitude: pos.latitude,
+          lastKnownLongitude: pos.longitude,
+        );
+      }
+    } catch (_) {
+      // Silently ignore if location cannot be fetched while idle
+    }
   }
 
   // ── Cold-Boot Recovery ───────────────────────────────────────────────────────
@@ -240,8 +257,24 @@ class TrackingNotifier extends Notifier<TrackingState> {
       status: TrackingStatus.acquiring,
       runId: runId,
       epochId: _epochId,
+      lastKnownLatitude: state.lastKnownLatitude,
+      lastKnownLongitude: state.lastKnownLongitude,
     );
 
+    // 1. Check if device location service (GPS switch) is enabled
+    final serviceEnabled = await _gpsRepo.isLocationServiceEnabled();
+    if (!ref.mounted) return;
+    if (!serviceEnabled) {
+      state = state.copyWith(
+        status: TrackingStatus.idle,
+        errorMessage: 'GPS is disabled on your device. Please turn on Location in quick settings.',
+      );
+      // Attempt to prompt the user to open device location settings
+      await _gpsRepo.openLocationSettings();
+      return;
+    }
+
+    // 2. Request location and notification permissions
     final permission = await _gpsRepo.requestPermission();
     if (!ref.mounted) return;
     if (!permission) {
@@ -258,24 +291,32 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _startStepTracking();
     _startPositionStream();
 
-    await _gpsRepo.updateRunRecord(
-      runId: runId,
-      status: 'running',
-      startedAt: DateTime.now(),
-      elapsedMs: 0,
-      movingMs: 0,
-      distanceMeters: 0,
-      totalSteps: 0,
-    );
+    try {
+      await _gpsRepo.updateRunRecord(
+        runId: runId,
+        status: 'running',
+        startedAt: DateTime.now(),
+        elapsedMs: 0,
+        movingMs: 0,
+        distanceMeters: 0,
+        totalSteps: 0,
+      );
+    } catch (e, st) {
+      AppCrashReporter.recordError(e, st, reason: 'startRun_db_error');
+    }
     if (!ref.mounted) return;
 
-    await _gpsRepo.logEvent(RunEvent(
-      runId: runId,
-      epochId: _epochId,
-      eventType: 'start',
-      monotonicMs: _monotonicStopwatch.elapsedMilliseconds,
-      timestamp: DateTime.now(),
-    ));
+    try {
+      await _gpsRepo.logEvent(RunEvent(
+        runId: runId,
+        epochId: _epochId,
+        eventType: 'start',
+        monotonicMs: _monotonicStopwatch.elapsedMilliseconds,
+        timestamp: DateTime.now(),
+      ));
+    } catch (e, st) {
+      AppCrashReporter.recordError(e, st, reason: 'startRun_logEvent_error');
+    }
     if (!ref.mounted) return;
 
     // Short loading window (~1.5s): transition immediately into running state
@@ -458,6 +499,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _cleanup();
     state = const TrackingState(status: TrackingStatus.idle);
   }
+
+
 
   /// Starts a synthetic demo run simulating realistic cadence, hills, and splits.
   Future<void> startDemoRun() async {
@@ -679,6 +722,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
       _pendingTelemetryBatch.add(rejectedPoint);
 
       state = state.copyWith(
+        lastKnownLatitude: pos.latitude,
+        lastKnownLongitude: pos.longitude,
         currentAccuracyMeters: pos.accuracy,
         gpsConfidence: 'Poor',
       );
@@ -703,8 +748,20 @@ class TrackingNotifier extends Notifier<TrackingState> {
         pos.longitude,
       );
 
-      // If coordinate displaced by >= minDistanceDeltaMeters (1.2m), runner has physically moved
-      if (delta >= GpsFilter.minDistanceDeltaMeters) {
+      // Teleportation / Discontinuous Jump Guard:
+      // If delta implies an impossible human speed (> 12.5 m/s or massive jump > 200m in <10s),
+      // we reset the anchor without adding thousands of fake kilometers to the running distance.
+      final dtSeconds = (nowMonotonicMs - _lastMovingTickMs) / 1000.0;
+      final impliedSpeed = dtSeconds > 0.1 ? delta / dtSeconds : delta;
+      final isTeleportJump = delta > 200.0 && impliedSpeed > GpsFilter.maxSpeedMetersPerSec;
+
+      if (isTeleportJump) {
+        _lastValidLat = pos.latitude;
+        _lastValidLng = pos.longitude;
+        _lastMovingTickMs = nowMonotonicMs;
+        // Teleport jumps (e.g. sensor mock changes) reset distance baseline anchor
+        // without erasing previously recorded breadcrumbs.
+      } else if (delta >= GpsFilter.minDistanceDeltaMeters) {
         hasDisplacement = true;
         if (_isAutoPaused) {
           _isAutoPaused = false;
@@ -817,6 +874,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
       estimatedCalories: _cumulativeCalories,
       splits: _splits,
       breadcrumbs: [...state.breadcrumbs, newPoint],
+      lastKnownLatitude: pos.latitude,
+      lastKnownLongitude: pos.longitude,
       errorMessage: null,
     );
   }
@@ -907,12 +966,13 @@ class TrackingNotifier extends Notifier<TrackingState> {
   }
 
   void _checkSplit(double currentDistanceMeters, double currentAltitude) {
-    final nextKmTarget = (_splits.length + 1) * 1000.0;
-    if (currentDistanceMeters >= nextKmTarget) {
-      final splitDistance = currentDistanceMeters - _lastSplitDistanceMeters;
+    while (currentDistanceMeters >= (_splits.length + 1) * 1000.0) {
+      final targetKm = _splits.length + 1;
+      final targetDistance = targetKm * 1000.0;
+      final splitDistance = targetDistance - _lastSplitDistanceMeters;
       final splitDurationMs = _movingMs - _lastSplitMovingMs;
       final splitSec = (splitDurationMs / 1000.0).round();
-      final paceSecPerKm = splitSec / (splitDistance / 1000.0);
+      final paceSecPerKm = splitDistance > 0 ? (splitSec / (splitDistance / 1000.0)) : 0.0;
       final elevDelta = currentAltitude - _lastSplitAltitude;
       final splitGradient = splitDistance > 0 ? (elevDelta / splitDistance) : 0.0;
       final splitGap = GpsFilter.calculateMinettiGap(
@@ -921,7 +981,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
       );
 
       final split = RunSplit(
-        kilometer: _splits.length + 1,
+        kilometer: targetKm,
         splitDurationSeconds: splitSec,
         averagePaceSecondsPerKm: paceSecPerKm,
         gapSecondsPerKm: splitGap,
@@ -930,7 +990,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
       );
 
       _splits.add(split);
-      _lastSplitDistanceMeters = currentDistanceMeters;
+      _lastSplitDistanceMeters = targetDistance;
       _lastSplitMovingMs = _movingMs;
       _lastSplitAltitude = currentAltitude;
 

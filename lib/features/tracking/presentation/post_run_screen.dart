@@ -375,22 +375,24 @@ class _PostRunScreenState extends ConsumerState<PostRunScreen> {
                               child: const Icon(Icons.add_a_photo_rounded, color: AppColors.primary, size: 22),
                             ),
                             const SizedBox(width: AppSpacing.md),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Add Photo to Workout',
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Add Photo to Workout',
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  'Your photo will appear behind your stats graphic',
-                                  style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
-                                ),
-                              ],
+                                  Text(
+                                    'Your photo will appear behind your stats graphic',
+                                    style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),

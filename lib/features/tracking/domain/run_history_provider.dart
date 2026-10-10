@@ -1,12 +1,24 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../auth/domain/user_entity.dart';
+import '../../auth/presentation/auth_providers.dart';
+import '../data/run_storage_service.dart';
 import 'run_summary_entity.dart';
 
 /// State containing all recorded and synced runs for the runner.
 class RunHistoryState {
   final List<RunSummaryEntity> runs;
+  final bool isLoading;
+  final int pendingSyncCount;
 
-  const RunHistoryState({this.runs = const []});
+  const RunHistoryState({
+    this.runs = const [],
+    this.isLoading = false,
+    this.pendingSyncCount = 0,
+  });
 
   double get totalDistanceKm =>
       runs.fold(0.0, (acc, r) => acc + r.distanceKm);
@@ -32,12 +44,200 @@ class RunHistoryState {
     copy.sort((a, b) => b.endedAt.compareTo(a.endedAt));
     return copy;
   }
+
+  RunHistoryState copyWith({
+    List<RunSummaryEntity>? runs,
+    bool? isLoading,
+    int? pendingSyncCount,
+  }) {
+    return RunHistoryState(
+      runs: runs ?? this.runs,
+      isLoading: isLoading ?? this.isLoading,
+      pendingSyncCount: pendingSyncCount ?? this.pendingSyncCount,
+    );
+  }
 }
 
 class RunHistoryNotifier extends Notifier<RunHistoryState> {
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
+  RunStorageService get _storage => ref.read(runStorageServiceProvider);
+
+  String? get _currentUserId => ref.read(authStateProvider).value?.id;
+
   @override
   RunHistoryState build() {
-    return RunHistoryState(runs: _initialRuns());
+    // 1. Start with initial runs immediately for instant UI render
+    final initialState = RunHistoryState(runs: _initialRuns());
+
+    // 2. Initialize persistent storage and cloud sync
+    Future.microtask(() => _initializePersistence());
+
+    // 3. Listen to auth changes: when user signs in, sync their runs
+    ref.listen<AsyncValue<UserEntity?>>(authStateProvider, (prev, next) {
+      final user = next.value;
+      if (user != null) {
+        _syncWithFirestore(user.id);
+      }
+    });
+
+    // 4. Listen to network connectivity restoration to sync any pending runs
+    _listenToConnectivity();
+
+    return initialState;
+  }
+
+  void _listenToConnectivity() {
+    _connectivitySub?.cancel();
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      final hasConnection = results.any((r) => r != ConnectivityResult.none);
+      if (hasConnection) {
+        debugPrint('[RunHistoryNotifier] Network restored, syncing pending runs...');
+        syncPending();
+      }
+    });
+
+    ref.onDispose(() {
+      _connectivitySub?.cancel();
+    });
+  }
+
+  Future<void> _initializePersistence() async {
+    try {
+      // Step A: Load local persistent runs first (SharedPreferences)
+      // This is instant and guarantees runs survive browser refresh (F5) or offline launch.
+      final localRuns = await _storage.loadLocalRuns();
+      final pendingIds = await _storage.getPendingSyncRunIds();
+
+      final runIds = <String>{};
+      final merged = <RunSummaryEntity>[];
+
+      // Local user runs take precedence over initial demo runs
+      for (final r in localRuns) {
+        if (runIds.add(r.runId)) {
+          merged.add(r);
+        }
+      }
+
+      // Add demo runs if not already in local storage
+      for (final r in _initialRuns()) {
+        if (runIds.add(r.runId)) {
+          merged.add(r);
+        }
+      }
+
+      state = state.copyWith(
+        runs: merged,
+        pendingSyncCount: pendingIds.length,
+      );
+
+      // Step B: If user is logged in, sync with Cloud Firestore
+      final userId = _currentUserId;
+      await _syncWithFirestore(userId);
+    } catch (e) {
+      debugPrint('[RunHistoryNotifier] Error initializing persistence: $e');
+    }
+  }
+
+  Future<void> _syncWithFirestore(String? userId) async {
+    try {
+      // 1. Upload any runs queued locally while offline
+      await _storage.syncPendingRuns(userId: userId);
+
+      // 2. Fetch runs from Firestore
+      final cloudRuns = await _storage.fetchUserRunsFromFirestore(userId: userId);
+      if (cloudRuns.isNotEmpty) {
+        final runIds = <String>{};
+        final merged = <RunSummaryEntity>[];
+
+        for (final r in cloudRuns) {
+          if (runIds.add(r.runId)) {
+            merged.add(r);
+          }
+        }
+        for (final r in state.runs) {
+          if (runIds.add(r.runId)) {
+            merged.add(r);
+          }
+        }
+
+        final pendingIds = await _storage.getPendingSyncRunIds();
+        state = state.copyWith(
+          runs: merged,
+          pendingSyncCount: pendingIds.length,
+        );
+      }
+    } catch (e) {
+      debugPrint('[RunHistoryNotifier] Background cloud sync error: $e');
+    }
+  }
+
+  /// Adds a newly completed run.
+  /// 1. Updates in-memory state immediately for zero-latency UI reaction.
+  /// 2. Saves to local storage (SharedPreferences) so refresh preserves it.
+  /// 3. Asynchronously syncs to Cloud Firestore; queues locally if offline.
+  void addRun(RunSummaryEntity run) {
+    final index = state.runs.indexWhere((r) => r.runId == run.runId);
+    List<RunSummaryEntity> updated;
+    if (index >= 0) {
+      updated = List<RunSummaryEntity>.from(state.runs);
+      updated[index] = run;
+    } else {
+      updated = [run, ...state.runs];
+    }
+    state = state.copyWith(runs: updated);
+
+    // Save locally and push to Firestore
+    _persistRun(run);
+  }
+
+  void updateRun(RunSummaryEntity run) => addRun(run);
+
+  void removeRun(String runId) {
+    state = state.copyWith(
+      runs: state.runs.where((r) => r.runId != runId).toList(),
+    );
+    _deleteRun(runId);
+  }
+
+  Future<void> _persistRun(RunSummaryEntity run) async {
+    try {
+      final synced = await _storage.saveRun(run, userId: _currentUserId);
+      final pendingIds = await _storage.getPendingSyncRunIds();
+      state = state.copyWith(pendingSyncCount: pendingIds.length);
+      if (synced) {
+        debugPrint('[RunHistoryNotifier] Run ${run.runId} successfully saved to Cloud Firestore.');
+      } else {
+        debugPrint('[RunHistoryNotifier] Run ${run.runId} saved to local storage (offline queue).');
+      }
+    } catch (e) {
+      debugPrint('[RunHistoryNotifier] Error persisting run: $e');
+    }
+  }
+
+  Future<void> _deleteRun(String runId) async {
+    try {
+      await _storage.deleteRunLocally(runId);
+      await _storage.deleteRunFromFirestore(runId);
+      final pendingIds = await _storage.getPendingSyncRunIds();
+      state = state.copyWith(pendingSyncCount: pendingIds.length);
+    } catch (e) {
+      debugPrint('[RunHistoryNotifier] Error deleting run $runId: $e');
+    }
+  }
+
+  /// Triggers a manual sync for all offline-queued runs.
+  Future<void> syncPending() async {
+    try {
+      final synced = await _storage.syncPendingRuns(userId: _currentUserId);
+      final pendingIds = await _storage.getPendingSyncRunIds();
+      state = state.copyWith(pendingSyncCount: pendingIds.length);
+      if (synced > 0) {
+        debugPrint('[RunHistoryNotifier] Successfully synced $synced pending runs to Firestore.');
+      }
+    } catch (e) {
+      debugPrint('[RunHistoryNotifier] Error syncing pending runs: $e');
+    }
   }
 
   static List<RunSummaryEntity> _initialRuns() {
@@ -50,7 +250,6 @@ class RunHistoryNotifier extends Notifier<RunHistoryState> {
     const baseLng = 121.0490;
     final initialBreadcrumbs = List<BreadcrumbPoint>.generate(48, (i) {
       final t = (i / 48) * 2 * math.pi;
-      // Coordinates tracing High Street, 5th Ave, 26th St, 11th Ave, and Track 30th
       final latOffset = 0.0035 * math.sin(t) + 0.0012 * math.sin(2 * t);
       final lngOffset = 0.0042 * math.cos(t) - 0.0008 * math.cos(3 * t);
       final altitude = 24.0 + 14.0 * (1.0 - ((i - 24).abs() / 24.0));
@@ -134,25 +333,6 @@ class RunHistoryNotifier extends Notifier<RunHistoryState> {
         breadcrumbs: initialBreadcrumbs,
       ),
     ];
-  }
-
-  void addRun(RunSummaryEntity run) {
-    final index = state.runs.indexWhere((r) => r.runId == run.runId);
-    if (index >= 0) {
-      final updated = List<RunSummaryEntity>.from(state.runs);
-      updated[index] = run;
-      state = RunHistoryState(runs: updated);
-    } else {
-      state = RunHistoryState(runs: [run, ...state.runs]);
-    }
-  }
-
-  void updateRun(RunSummaryEntity run) => addRun(run);
-
-  void removeRun(String runId) {
-    state = RunHistoryState(
-      runs: state.runs.where((r) => r.runId != runId).toList(),
-    );
   }
 }
 

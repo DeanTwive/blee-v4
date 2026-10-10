@@ -115,6 +115,17 @@ class InMemoryGpsRepository implements IGpsRepository {
 
   Position? latestPosition;
 
+  bool locationServiceEnabled = true;
+
+  @override
+  Future<bool> isLocationServiceEnabled() async => locationServiceEnabled;
+
+  @override
+  Future<bool> openLocationSettings() async => true;
+
+  @override
+  Future<bool> openAppSettings() async => true;
+
   @override
   Future<bool> checkPermission() async => permissionGranted;
 
