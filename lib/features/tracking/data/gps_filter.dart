@@ -95,6 +95,73 @@ abstract final class GpsFilter {
     return (alpha * rawSpeed) + ((1.0 - alpha) * previousSmoothedSpeed);
   }
 
+  /// Athletic Pace Speed Filter:
+  /// Uses an adaptive low-pass filter specifically tuned for human running kinematics.
+  /// When transitioning from a standstill or cold start, applies fast attack
+  /// so pace becomes responsive immediately without a 15-second lag.
+  /// When steadily running, applies smooth filtering (alpha = 0.18, ~5.5s time constant)
+  /// to eliminate GPS carrier jitter and pedestrian hand-swing oscillations.
+  static double smoothAthleticSpeed({
+    required double rawSpeed,
+    required double previousSmoothedSpeed,
+    double defaultAlpha = 0.18,
+  }) {
+    if (rawSpeed < 0 || rawSpeed.isNaN) return 0.0;
+    if (rawSpeed <= 0.1 && previousSmoothedSpeed <= 0.3) return 0.0;
+
+    // Fast-attack: if starting from stationary or coming out of a pause
+    if (previousSmoothedSpeed <= 0.2 && rawSpeed > 0.6) {
+      return rawSpeed;
+    }
+
+    // Gentle decay when slowing down significantly or stopping
+    if (rawSpeed < 0.3 && previousSmoothedSpeed > 0.5) {
+      return previousSmoothedSpeed * 0.75;
+    }
+
+    return (defaultAlpha * rawSpeed) + ((1.0 - defaultAlpha) * previousSmoothedSpeed);
+  }
+
+  /// Converts a physical speed in meters/second to pace in seconds/km.
+  /// Returns 0.0 (unpaced / '--:--') when speed is below 0.5 m/s (~1.8 km/h).
+  /// Clamps athletic pace to realistic human bounds [120.0, 1500.0] (2:00/km to 25:00/km).
+  static double speedToPace(double speedMps) {
+    if (speedMps < 0.5 || speedMps.isNaN || speedMps.isInfinite) {
+      return 0.0;
+    }
+    final pace = 1000.0 / speedMps;
+    return pace.clamp(120.0, 1500.0);
+  }
+
+  /// Pace Display Damping / Slew-Rate Limiter:
+  /// Prevents instantaneous pace numbers on the HUD from aggressively jumping back and forth
+  /// (e.g. 8:00 -> 12:00 -> 6:00 within seconds).
+  /// Enforces a maximum step rate per second (default 4.0 - 5.0 s/s) so pace transitions
+  /// smoothly and naturally, matching Strava and Garmin watches.
+  static double dampPaceChange({
+    required double targetPace,
+    required double currentDisplayedPace,
+    double maxStepPerSecond = 4.0,
+  }) {
+    if (targetPace <= 0) {
+      // Gracefully decay to 0 when stopping
+      if (currentDisplayedPace <= 0) return 0.0;
+      final decayed = currentDisplayedPace - (maxStepPerSecond * 2);
+      return decayed > 0 ? decayed : 0.0;
+    }
+    if (currentDisplayedPace <= 0) {
+      // Immediate acquisition upon starting to run
+      return targetPace;
+    }
+    final diff = targetPace - currentDisplayedPace;
+    if (diff > maxStepPerSecond) {
+      return currentDisplayedPace + maxStepPerSecond;
+    } else if (diff < -maxStepPerSecond) {
+      return currentDisplayedPace - maxStepPerSecond;
+    }
+    return targetPace;
+  }
+
   /// Calculates Alberto Minetti Grade Adjusted Pace (GAP).
   /// Cr(i) = 155.4*i^5 - 30.4*i^4 - 43.3*i^3 + 46.3*i^2 + 19.5*i + 3.6 J/(kg*m).
   /// Normalised to flat ground Cr_flat = 3.6 J/(kg*m).

@@ -369,6 +369,7 @@ class TrackingState {
 
   // Pacing & Splits
   final double currentPaceSecondsPerKm;
+  final double currentSplitPaceSecondsPerKm;
   final double averagePaceSecondsPerKm;
   final double currentGapSecondsPerKm;
   final List<RunSplit> splits;
@@ -404,6 +405,7 @@ class TrackingState {
     this.elapsedSeconds = 0,
     this.movingSeconds = 0,
     this.currentPaceSecondsPerKm = 0,
+    this.currentSplitPaceSecondsPerKm = 0,
     this.averagePaceSecondsPerKm = 0,
     this.currentGapSecondsPerKm = 0,
     this.splits = const [],
@@ -441,6 +443,7 @@ class TrackingState {
     int? elapsedSeconds,
     int? movingSeconds,
     double? currentPaceSecondsPerKm,
+    double? currentSplitPaceSecondsPerKm,
     double? averagePaceSecondsPerKm,
     double? currentGapSecondsPerKm,
     List<RunSplit>? splits,
@@ -471,6 +474,7 @@ class TrackingState {
       elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
       movingSeconds: movingSeconds ?? this.movingSeconds,
       currentPaceSecondsPerKm: currentPaceSecondsPerKm ?? this.currentPaceSecondsPerKm,
+      currentSplitPaceSecondsPerKm: currentSplitPaceSecondsPerKm ?? this.currentSplitPaceSecondsPerKm,
       averagePaceSecondsPerKm: averagePaceSecondsPerKm ?? this.averagePaceSecondsPerKm,
       currentGapSecondsPerKm: currentGapSecondsPerKm ?? this.currentGapSecondsPerKm,
       splits: splits ?? this.splits,

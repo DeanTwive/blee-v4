@@ -484,6 +484,7 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
   final PageController _pageController = PageController();
   int _currentCardIndex = 0;
   bool _showMap = false;
+  int _paceDisplayMode = 0; // 0: Live Pace, 1: Split Avg (Strava default), 2: Overall Avg Pace
 
   @override
   void dispose() {
@@ -498,8 +499,32 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
     final distanceKm = state.distanceKm.toStringAsFixed(2);
     final movingDuration = GeoMath.formatDuration(
         state.movingSeconds > 0 ? state.movingSeconds : state.elapsedSeconds);
-    final pace = GeoMath.formatPace(state.currentPaceSecondsPerKm);
     final accuracy = state.currentAccuracyMeters;
+
+    String paceValue;
+    String paceLabel;
+    String topPaceLabel;
+    switch (_paceDisplayMode) {
+      case 1:
+        final splitPace = state.currentSplitPaceSecondsPerKm > 0
+            ? state.currentSplitPaceSecondsPerKm
+            : state.averagePaceSecondsPerKm;
+        paceValue = GeoMath.formatPace(splitPace);
+        paceLabel = 'SPLIT AVG (/KM)';
+        topPaceLabel = 'SPLIT';
+        break;
+      case 2:
+        paceValue = GeoMath.formatPace(state.averagePaceSecondsPerKm);
+        paceLabel = 'AVG PACE';
+        topPaceLabel = 'AVG';
+        break;
+      case 0:
+      default:
+        paceValue = GeoMath.formatPace(state.currentPaceSecondsPerKm);
+        paceLabel = 'PACE /KM';
+        topPaceLabel = 'PACE';
+        break;
+    }
 
     // ── Strava Live Map Mode ──────────────────────────────────────────
     if (_showMap) {
@@ -540,7 +565,11 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
                 children: [
                   _MiniStat(label: 'KM', value: distanceKm),
                   Container(width: 1, height: 26, color: AppColors.surfaceBorder),
-                  _MiniStat(label: 'PACE', value: pace),
+                  InkWell(
+                    onTap: () => setState(() => _paceDisplayMode = (_paceDisplayMode + 1) % 3),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    child: _MiniStat(label: topPaceLabel, value: paceValue),
+                  ),
                   Container(width: 1, height: 26, color: AppColors.surfaceBorder),
                   _MiniStat(label: 'TIME', value: movingDuration),
                   // Back to stats toggle
@@ -831,7 +860,16 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _MetricColumn(value: pace, label: 'PACE /KM'),
+                    _MetricColumn(
+                      value: paceValue,
+                      label: paceLabel,
+                      onTap: () {
+                        setState(() {
+                          _paceDisplayMode = (_paceDisplayMode + 1) % 3;
+                        });
+                      },
+                      toggleHint: 'toggle',
+                    ),
                     Container(width: 1, height: 38, color: AppColors.surfaceBorder),
                     _MetricColumn(value: movingDuration, label: 'MOVING TIME'),
                   ],
@@ -1156,17 +1194,46 @@ class _SubMetric extends StatelessWidget {
 class _MetricColumn extends StatelessWidget {
   final String value;
   final String label;
-  const _MetricColumn({required this.value, required this.label});
+  final VoidCallback? onTap;
+  final String? toggleHint;
+
+  const _MetricColumn({
+    required this.value,
+    required this.label,
+    this.onTap,
+    this.toggleHint,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final content = Column(
       children: [
         Text(value, style: AppTypography.metricMedium),
         const SizedBox(height: AppSpacing.xxs),
-        Text(label, style: AppTypography.caption.copyWith(letterSpacing: 1)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: AppTypography.caption.copyWith(letterSpacing: 1)),
+            if (toggleHint != null) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.sync_rounded, size: 12, color: AppColors.primary.withValues(alpha: 0.7)),
+            ],
+          ],
+        ),
       ],
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: AppSpacing.xxs),
+          child: content,
+        ),
+      );
+    }
+    return content;
   }
 }
 

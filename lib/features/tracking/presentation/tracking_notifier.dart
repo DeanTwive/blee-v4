@@ -44,8 +44,10 @@ class TrackingNotifier extends Notifier<TrackingState> {
   double _cumulativeGainMeters = 0.0;
   double _cumulativeLossMeters = 0.0;
 
-  // Rolling Pace Window (last 10 seconds of distance)
+  // Rolling Pace Window & Smooth Damped Pace Tracking
   final List<({double distance, int timestampMs})> _rollingPaceWindow = [];
+  int? _lastFixMonotonicMs;
+  double _currentDampedLivePace = 0.0;
 
   // Splits tracking
   double _lastSplitDistanceMeters = 0.0;
@@ -678,9 +680,33 @@ class TrackingNotifier extends Notifier<TrackingState> {
           ? (movingSec / (state.distanceMeters / 1000.0))
           : 0.0;
 
+      // Current split pace (average pace of current km split, matching Strava's "Split avg. (/km)")
+      final currentSplitDist = state.distanceMeters - _lastSplitDistanceMeters;
+      final currentSplitMs = _movingMs - _lastSplitMovingMs;
+      final currentSplitSec = currentSplitMs / 1000.0;
+      final currentSplitPace = (currentSplitDist >= 15.0 && currentSplitSec > 0)
+          ? (currentSplitSec / (currentSplitDist / 1000.0))
+          : (state.distanceMeters >= 15.0 ? avgPace : 0.0);
+
+      // Smoothly advance damped live pace every second towards target speed
+      if (isMoving) {
+        final targetPace = GpsFilter.speedToPace(_smoothedSpeedMps);
+        _currentDampedLivePace = GpsFilter.dampPaceChange(
+          targetPace: targetPace,
+          currentDisplayedPace: _currentDampedLivePace,
+        );
+      } else {
+        _currentDampedLivePace = GpsFilter.dampPaceChange(
+          targetPace: 0.0,
+          currentDisplayedPace: _currentDampedLivePace,
+        );
+      }
+
       state = state.copyWith(
         elapsedSeconds: elapsedSec,
         movingSeconds: movingSec,
+        currentPaceSecondsPerKm: _currentDampedLivePace,
+        currentSplitPaceSecondsPerKm: currentSplitPace,
         averagePaceSecondsPerKm: avgPace,
         totalSteps: _totalSteps,
         currentCadenceSpm: _currentCadenceSpm,
@@ -792,14 +818,22 @@ class TrackingNotifier extends Notifier<TrackingState> {
       debugPrint('[BLEE_DIAG] fix: acc=${pos.accuracy.toStringAsFixed(1)}m, spd=${pos.speed.toStringAsFixed(2)}m/s, delta=${hasDisplacement ? addedDist.toStringAsFixed(2) : "0.0"}m, totalDist=${(state.distanceMeters + addedDist).toStringAsFixed(1)}m, paused=$_isAutoPaused');
     }
 
-    if (currentSpeedMps <= 0 && addedDist > 0) {
-      final dt = (nowMonotonicMs - _lastMovingTickMs) / 1000.0;
-      if (dt > 0.1 && dt < 10.0) {
-        currentSpeedMps = addedDist / dt;
+    final dtFix = (_lastFixMonotonicMs != null)
+        ? (nowMonotonicMs - _lastFixMonotonicMs!) / 1000.0
+        : 1.0;
+    _lastFixMonotonicMs = nowMonotonicMs;
+
+    if (currentSpeedMps <= 0.3 && addedDist > 0 && dtFix > 0.1 && dtFix < 10.0) {
+      final dispSpeed = addedDist / dtFix;
+      if (dispSpeed <= GpsFilter.maxSpeedMetersPerSec) {
+        currentSpeedMps = dispSpeed;
       }
     }
 
-    _smoothedSpeedMps = GpsFilter.filterDopplerSpeed(currentSpeedMps, _smoothedSpeedMps);
+    _smoothedSpeedMps = GpsFilter.smoothAthleticSpeed(
+      rawSpeed: currentSpeedMps,
+      previousSmoothedSpeed: _smoothedSpeedMps,
+    );
     _evaluateAutoPause(_smoothedSpeedMps, nowMonotonicMs, hasDisplacement: hasDisplacement);
 
     // 4. Continuous Altitude & 2.0m Anchor Hysteresis
@@ -807,26 +841,31 @@ class TrackingNotifier extends Notifier<TrackingState> {
 
     final newDistance = state.distanceMeters + addedDist;
 
-    // 5. Rolling 10s Live Pace Window
-    _rollingPaceWindow.add((distance: addedDist, timestampMs: nowMonotonicMs));
-    _rollingPaceWindow.removeWhere((w) => nowMonotonicMs - w.timestampMs > 10000);
+    // 5. Athletic Live Pace & Current Split Average (Matching Strava)
+    final targetPace = (!_isAutoPaused && state.status == TrackingStatus.running)
+        ? GpsFilter.speedToPace(_smoothedSpeedMps)
+        : 0.0;
 
-    double rollingDist = 0.0;
-    for (final w in _rollingPaceWindow) {
-      rollingDist += w.distance;
-    }
-    final livePaceSec = (rollingDist > 2.0 && !_isAutoPaused)
-        ? (10.0 / (rollingDist / 1000.0))
-        : (newDistance > 5.0 && _movingMs > 1000 ? (_movingMs / 1000.0) / (newDistance / 1000.0) : 0.0);
+    _currentDampedLivePace = GpsFilter.dampPaceChange(
+      targetPace: targetPace,
+      currentDisplayedPace: _currentDampedLivePace,
+    );
+
+    final currentSplitDist = newDistance - _lastSplitDistanceMeters;
+    final currentSplitMs = _movingMs - _lastSplitMovingMs;
+    final currentSplitSec = currentSplitMs / 1000.0;
+    final currentSplitPace = (currentSplitDist >= 15.0 && currentSplitSec > 0)
+        ? (currentSplitSec / (currentSplitDist / 1000.0))
+        : (newDistance >= 15.0 && _movingMs > 1000 ? (_movingMs / 1000.0) / (newDistance / 1000.0) : 0.0);
 
     // 6. 40m Windowed Grade & Minetti GAP
     final gradient = _calculate40mWindowGradient(newDistance, pos.altitude);
-    final gapPace = (newDistance >= GpsFilter.minGapDistanceWarmupMeters && livePaceSec > 0)
+    final gapPace = (newDistance >= GpsFilter.minGapDistanceWarmupMeters && _currentDampedLivePace > 0)
         ? GpsFilter.calculateMinettiGap(
-            actualPaceSecondsPerKm: livePaceSec,
+            actualPaceSecondsPerKm: _currentDampedLivePace,
             gradientFraction: gradient,
           )
-        : livePaceSec;
+        : _currentDampedLivePace;
 
     // 7. Dual-Speed ACSM Metabolic Calorie Calculation
     if (!_isAutoPaused && state.status == TrackingStatus.running) {
@@ -863,7 +902,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
     state = state.copyWith(
       status: _isAutoPaused ? TrackingStatus.paused : TrackingStatus.running,
       distanceMeters: newDistance,
-      currentPaceSecondsPerKm: livePaceSec,
+      currentPaceSecondsPerKm: _currentDampedLivePace,
+      currentSplitPaceSecondsPerKm: currentSplitPace,
       currentGapSecondsPerKm: gapPace,
       currentAltitude: pos.altitude,
       elevationGainMeters: _cumulativeGainMeters,
@@ -1029,7 +1069,9 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _monotonicStopwatch.reset();
     _movingMs = 0;
     _lastMovingTickMs = 0;
+    _lastFixMonotonicMs = null;
     _smoothedSpeedMps = 0.0;
+    _currentDampedLivePace = 0.0;
     _consecutiveSlowSeconds = 0;
     _isAutoPaused = false;
     _lastValidLat = null;

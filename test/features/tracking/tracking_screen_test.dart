@@ -185,5 +185,59 @@ void main() {
       expect(find.text('KEEP RUNNING'), findsOneWidget);
       expect(find.text('DISCARD'), findsOneWidget);
     });
+
+    testWidgets('Tapping pace metric cycles between PACE /KM, SPLIT AVG (/KM), and AVG PACE', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            trackingNotifierProvider.overrideWith(
+              () => FakeTrackingNotifier(
+                const TrackingState(
+                  status: TrackingStatus.running,
+                  distanceMeters: 1200,
+                  elapsedSeconds: 720,
+                  currentPaceSecondsPerKm: 480, // 8:00
+                  currentSplitPaceSecondsPerKm: 715, // 11:55
+                  averagePaceSecondsPerKm: 600, // 10:00
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: const TrackingScreen(),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Initial state: Mode 0 = PACE /KM (8:00)
+      expect(find.text('PACE /KM'), findsOneWidget);
+      expect(find.text('8:00'), findsOneWidget);
+
+      // Tap pace metric to cycle to Mode 1 = SPLIT AVG (/KM) (matching Strava screenshot!)
+      await tester.tap(find.text('PACE /KM'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('SPLIT AVG (/KM)'), findsOneWidget);
+      expect(find.text('11:55'), findsOneWidget);
+
+      // Tap again to cycle to Mode 2 = AVG PACE (10:00)
+      await tester.tap(find.text('SPLIT AVG (/KM)'));
+      await tester.pumpAndSettle();
+
+      // Note: Card 3 also has 'AVG PACE', so there will be at least one or two
+      expect(find.text('AVG PACE'), findsAtLeastNWidgets(1));
+      expect(find.text('10:00'), findsAtLeastNWidgets(1));
+
+      // Tap again to return to Mode 0 = PACE /KM
+      await tester.tap(find.text('AVG PACE').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('PACE /KM'), findsOneWidget);
+      expect(find.text('8:00'), findsOneWidget);
+    });
   });
 }

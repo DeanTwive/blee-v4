@@ -280,5 +280,38 @@ void main() {
       expect(summary.effectiveBreadcrumbs.last.latitude, 25.062);
       expect(summary.displayLocation, contains('Linkou'));
     });
+
+    test('smoothAthleticSpeed filters out 1 Hz speed spikes smoothly without jumping', () {
+      // Runner moving at 2.0 m/s (~8:20/km)
+      double smoothed = 2.0;
+      // Sudden GPS speed glitch to 1.2 m/s
+      smoothed = GpsFilter.smoothAthleticSpeed(rawSpeed: 1.2, previousSmoothedSpeed: smoothed);
+      // Smoothed speed changes only slightly (2.0 -> ~1.86 m/s), never jumping wildly
+      expect(smoothed, closeTo(1.856, 0.05));
+
+      // Fast-attack from standstill (0 -> 2.2 m/s) responds immediately
+      final fastAttack = GpsFilter.smoothAthleticSpeed(rawSpeed: 2.2, previousSmoothedSpeed: 0.0);
+      expect(fastAttack, equals(2.2));
+    });
+
+    test('speedToPace converts speed to pace and clamps unpaced slow speed', () {
+      // 2.083 m/s = 480 s/km (8:00/km)
+      final pace800 = GpsFilter.speedToPace(2.0833);
+      expect(pace800, closeTo(480.0, 1.0));
+
+      // Speed < 0.5 m/s (standing / stopping) returns 0.0 (unpaced / '--:--')
+      expect(GpsFilter.speedToPace(0.2), equals(0.0));
+      expect(GpsFilter.speedToPace(0.0), equals(0.0));
+    });
+
+    test('dampPaceChange limits slew rate per second so pace transitions smoothly like Strava', () {
+      // Current displayed pace is 480s (8:00/km). Target pace fluctuates to 540s (9:00/km).
+      // dampPaceChange steps by at most 4 seconds per update.
+      final step1 = GpsFilter.dampPaceChange(targetPace: 540.0, currentDisplayedPace: 480.0, maxStepPerSecond: 4.0);
+      expect(step1, equals(484.0)); // 480 -> 484, NOT jumping straight to 540
+
+      final stepDown = GpsFilter.dampPaceChange(targetPace: 400.0, currentDisplayedPace: 480.0, maxStepPerSecond: 4.0);
+      expect(stepDown, equals(476.0)); // 480 -> 476, NOT jumping straight to 400
+    });
   });
 }
