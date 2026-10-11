@@ -9,6 +9,7 @@ import '../data/gps_filter.dart';
 import '../data/gps_repository.dart';
 import '../data/step_cadence_repository.dart';
 import '../domain/run_summary_entity.dart';
+import '../domain/run_history_provider.dart';
 
 final trackingNotifierProvider =
     NotifierProvider<TrackingNotifier, TrackingState>(TrackingNotifier.new);
@@ -131,16 +132,21 @@ class TrackingNotifier extends Notifier<TrackingState> {
     final movingSec = movingMs ~/ 1000;
     final elapsedSec = elapsedMs ~/ 1000;
 
-    await _gpsRepo.updateRunRecord(
-      runId: runId,
-      status: 'completed',
-      startedAt: startedAt,
-      endedAt: endedAt,
-      elapsedMs: elapsedMs,
-      movingMs: movingMs,
-      distanceMeters: distanceMeters,
-      totalSteps: steps,
-    );
+    try {
+      await _gpsRepo.updateRunRecord(
+        runId: runId,
+        status: 'completed',
+        startedAt: startedAt,
+        endedAt: endedAt,
+        elapsedMs: elapsedMs,
+        movingMs: movingMs,
+        distanceMeters: distanceMeters,
+        totalSteps: steps,
+      );
+    } catch (e, st) {
+      debugPrint('[recoverAndFinishRun] DB update error: $e');
+      AppCrashReporter.recordError(e, st, reason: 'recoverAndFinishRun_db_error');
+    }
 
     state = state.copyWith(clearUnfinishedRun: true);
 
@@ -162,20 +168,25 @@ class TrackingNotifier extends Notifier<TrackingState> {
       }
     }
 
-    final peakResult = points.length >= 2
-        ? await compute(GpsFilter.findPeakKm, points)
-        : null;
+    ({int peakKmIndex, double paceSecondsPerKm})? peakResult;
+    try {
+      if (points.length >= 2) {
+        peakResult = GpsFilter.findPeakKm(points);
+      }
+    } catch (e) {
+      debugPrint('[recoverAndFinishRun] findPeakKm calculation skipped: $e');
+    }
 
     final avgPace = (movingSec > 0 && distanceMeters >= 10.0)
         ? (movingSec / (distanceMeters / 1000.0))
         : 0.0;
 
-    return RunSummaryEntity(
+    final summary = RunSummaryEntity(
       runId: runId,
       startedAt: startedAt,
       endedAt: endedAt,
       distanceMeters: distanceMeters,
-      durationSeconds: elapsedSec > 0 ? elapsedSec : movingSec,
+      durationSeconds: elapsedSec > 0 ? elapsedSec : (movingSec > 0 ? movingSec : 1),
       movingSeconds: movingSec,
       avgPaceSecondsPerKm: avgPace,
       peakKmPaceSecondsPerKm: peakResult?.paceSecondsPerKm ?? (avgPace > 0 ? avgPace * 0.95 : 0.0),
@@ -193,6 +204,17 @@ class TrackingNotifier extends Notifier<TrackingState> {
       splits: const [],
       breadcrumbs: points,
     );
+
+    // Auto-persist immediately to runner history and local storage
+    try {
+      ref.read(runHistoryNotifierProvider.notifier).addRun(summary);
+      debugPrint('[recoverAndFinishRun] Run $runId auto-persisted to history.');
+    } catch (e, st) {
+      debugPrint('[recoverAndFinishRun] Error auto-persisting run $runId: $e');
+      AppCrashReporter.recordError(e, st, reason: 'recover_auto_persist_error');
+    }
+
+    return summary;
   }
 
   /// Cold-Boot Recovery: Resumes tracking an interrupted run seamlessly.
@@ -399,23 +421,29 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _cleanup();
     _flushBatch();
 
-    state = const TrackingState(status: TrackingStatus.stopped);
+    // Preserve run data while setting status to stopped so HUD doesn't blank out prematurely
+    state = state.copyWith(status: TrackingStatus.stopped);
 
     final startedAt = breadcrumbs.isNotEmpty
         ? breadcrumbs.first.timestamp
         : DateTime.now().subtract(Duration(seconds: elapsedSec > 0 ? elapsedSec : 1));
     final endedAt = DateTime.now();
 
-    await _gpsRepo.updateRunRecord(
-      runId: runId,
-      status: 'completed',
-      startedAt: startedAt,
-      endedAt: endedAt,
-      elapsedMs: elapsedSec * 1000,
-      movingMs: movingSec * 1000,
-      distanceMeters: distanceM,
-      totalSteps: _totalSteps,
-    );
+    try {
+      await _gpsRepo.updateRunRecord(
+        runId: runId,
+        status: 'completed',
+        startedAt: startedAt,
+        endedAt: endedAt,
+        elapsedMs: elapsedSec * 1000,
+        movingMs: movingSec * 1000,
+        distanceMeters: distanceM,
+        totalSteps: _totalSteps,
+      );
+    } catch (e, st) {
+      debugPrint('[stopRun] SQLite updateRunRecord failed: $e');
+      AppCrashReporter.recordError(e, st, reason: 'stopRun_db_error');
+    }
 
     // Ensure at least one breadcrumb exists for summary visualization
     if (breadcrumbs.isEmpty && currentLat != null && currentLng != null) {
@@ -433,15 +461,11 @@ class TrackingNotifier extends Notifier<TrackingState> {
       ));
     }
 
-    // Safely compute peak km without web isolate crashes
+    // Safely compute peak km with fast synchronous math (no isolate overhead)
     ({int peakKmIndex, double paceSecondsPerKm})? peakResult;
     try {
       if (breadcrumbs.length >= 2) {
-        if (kIsWeb || breadcrumbs.length < 200) {
-          peakResult = GpsFilter.findPeakKm(breadcrumbs);
-        } else {
-          peakResult = await compute(GpsFilter.findPeakKm, breadcrumbs);
-        }
+        peakResult = GpsFilter.findPeakKm(breadcrumbs);
       }
     } catch (e) {
       debugPrint('[stopRun] findPeakKm calculation skipped: $e');
@@ -467,15 +491,23 @@ class TrackingNotifier extends Notifier<TrackingState> {
       avgCadenceSpm: _avgCadenceSpm,
       avgStepLengthMeters: _estimatedStepLengthM,
       estimatedCalories: _cumulativeCalories,
-      splits: _splits,
+      splits: List.unmodifiable(_splits),
       breadcrumbs: breadcrumbs,
     );
+
+    // Auto-persist immediately into runner's history and local storage
+    try {
+      ref.read(runHistoryNotifierProvider.notifier).addRun(summary);
+      debugPrint('[BLEE_DIAG] stopRun: run $runId auto-persisted to history & local storage');
+    } catch (e, st) {
+      debugPrint('[stopRun] Error auto-persisting run $runId: $e');
+      AppCrashReporter.recordError(e, st, reason: 'stopRun_auto_persist_error');
+    }
 
     if (kDebugMode) {
       debugPrint('[BLEE_DIAG] stopRun: finished run=$runId, dist=${distanceM.toStringAsFixed(1)}m, points=${breadcrumbs.length}');
     }
 
-    // Keep tracking state as stopped so UI transitions smoothly to PostRunScreen without triggering the acquiring trap.
     state = const TrackingState(status: TrackingStatus.stopped);
     return summary;
   }

@@ -56,6 +56,28 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     }
   }
 
+  Future<void> _handleStopRun() async {
+    final summary = await ref.read(trackingNotifierProvider.notifier).stopRun();
+    if (!mounted) return;
+    if (summary != null) {
+      context.pushReplacement(Routes.postRun, extra: summary);
+    } else {
+      context.go(Routes.home);
+    }
+  }
+
+  Future<void> _handleDiscardRun() async {
+    await ref.read(trackingNotifierProvider.notifier).discardCurrentRun();
+    if (!mounted) return;
+    context.go(Routes.home);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Run discarded'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(trackingNotifierProvider);
@@ -74,7 +96,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       backgroundColor: AppColors.surfaceBackground,
       body: SafeArea(
         child: switch (effectiveStatus) {
-          TrackingStatus.idle || TrackingStatus.stopped => _IdleView(
+          TrackingStatus.idle => _IdleView(
               errorMessage: state.errorMessage,
               unfinishedRun: state.unfinishedRun,
               latitude: state.currentLatitude ?? state.lastKnownLatitude,
@@ -88,14 +110,64 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
               onSaveUnfinished: (runId) async {
                 final summary = await ref.read(trackingNotifierProvider.notifier).recoverAndFinishRun(runId);
                 if (summary != null && context.mounted) {
-                  context.push(Routes.postRun, extra: summary);
+                  context.pushReplacement(Routes.postRun, extra: summary);
                 }
               },
               onDiscardUnfinished: (runId) => ref.read(trackingNotifierProvider.notifier).discardUnfinishedRun(runId),
             ),
+          TrackingStatus.stopped => const _FinishingRunView(),
           TrackingStatus.acquiring => _AcquiringView(onCancel: _handleCancel),
-          TrackingStatus.running || TrackingStatus.paused => _RunningHud(state: state),
+          TrackingStatus.running || TrackingStatus.paused => _RunningHud(
+              state: state,
+              onStopRun: _handleStopRun,
+              onDiscardRun: _handleDiscardRun,
+            ),
         },
+      ),
+    );
+  }
+}
+
+class _FinishingRunView extends StatelessWidget {
+  const _FinishingRunView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primaryMuted,
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.4), width: 2),
+            ),
+            alignment: Alignment.center,
+            child: const Text('🐝', style: TextStyle(fontSize: 40)),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const Text(
+            'Finalizing Workout...',
+            style: AppTypography.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Saving route telemetry & calculating splits...',
+            style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -474,7 +546,14 @@ class _AcquiringViewState extends ConsumerState<_AcquiringView>
 
 class _RunningHud extends ConsumerStatefulWidget {
   final TrackingState state;
-  const _RunningHud({required this.state});
+  final VoidCallback onStopRun;
+  final VoidCallback onDiscardRun;
+
+  const _RunningHud({
+    required this.state,
+    required this.onStopRun,
+    required this.onDiscardRun,
+  });
 
   @override
   ConsumerState<_RunningHud> createState() => _RunningHudState();
@@ -639,30 +718,8 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
                   ),
                   _HoldToStopButton(
                     isPaused: isPaused,
-                    onStopped: () async {
-                      final summary = await ref
-                          .read(trackingNotifierProvider.notifier)
-                          .stopRun();
-                      if (context.mounted && summary != null) {
-                        context.pushReplacement(Routes.postRun, extra: summary);
-                      } else if (context.mounted) {
-                        context.go(Routes.home);
-                      }
-                    },
-                    onDiscard: () async {
-                      await ref
-                          .read(trackingNotifierProvider.notifier)
-                          .discardCurrentRun();
-                      if (context.mounted) {
-                        context.go(Routes.home);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Run discarded'),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                      }
-                    },
+                    onStopped: widget.onStopRun,
+                    onDiscard: widget.onDiscardRun,
                   ),
                 ],
               ),
@@ -1097,30 +1154,8 @@ class _RunningHudState extends ConsumerState<_RunningHud> {
               // Hold-to-stop / Finish Button
               _HoldToStopButton(
                 isPaused: isPaused,
-                onStopped: () async {
-                  final summary = await ref
-                      .read(trackingNotifierProvider.notifier)
-                      .stopRun();
-                  if (context.mounted && summary != null) {
-                    context.pushReplacement(Routes.postRun, extra: summary);
-                  } else if (context.mounted) {
-                    context.go(Routes.home);
-                  }
-                },
-                onDiscard: () async {
-                  await ref
-                      .read(trackingNotifierProvider.notifier)
-                      .discardCurrentRun();
-                  if (context.mounted) {
-                    context.go(Routes.home);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Run discarded'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                  }
-                },
+                onStopped: widget.onStopRun,
+                onDiscard: widget.onDiscardRun,
               ),
             ],
           ),

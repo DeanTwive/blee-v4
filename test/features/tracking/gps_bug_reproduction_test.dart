@@ -8,6 +8,7 @@ import 'package:blee/features/tracking/presentation/tracking_notifier.dart';
 import '../../qa_harness/test_harness_models.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late ProviderContainer container;
   late InMemoryGpsRepository gpsRepo;
   late FakeStepCadenceRepository stepRepo;

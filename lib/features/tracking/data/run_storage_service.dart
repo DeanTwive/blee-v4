@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/run_summary_entity.dart';
+import 'gps_filter.dart';
 
 /// Robust offline-first storage and Cloud Firestore synchronization service for completed runs.
 ///
@@ -84,7 +85,12 @@ class RunStorageService {
       }
 
       // Add the new / updated run at the beginning
-      updatedMaps.insert(0, run.toMap(includeImageBytes: true));
+      // Optimize storage: decimate breadcrumbs for local route map visualization
+      // if breadcrumbs list exceeds 250 points to prevent SharedPreferences bloating
+      final optimizedRun = (run.breadcrumbs.length > 250)
+          ? run.copyWith(breadcrumbs: GpsFilter.decimatePolyline(run.breadcrumbs, epsilonMeters: 2.0))
+          : run;
+      updatedMaps.insert(0, optimizedRun.toMap(includeImageBytes: true));
 
       // Serialize back
       final updatedStrings = updatedMaps.map((m) => jsonEncode(m)).toList();
@@ -162,8 +168,11 @@ class RunStorageService {
     }
 
     try {
+      final optimizedRun = (run.breadcrumbs.length > 250)
+          ? run.copyWith(breadcrumbs: GpsFilter.decimatePolyline(run.breadcrumbs, epsilonMeters: 2.0))
+          : run;
       final data = {
-        ...run.toMap(includeImageBytes: false),
+        ...optimizedRun.toMap(includeImageBytes: false),
         'userId': (userId != null && userId.trim().isNotEmpty) ? userId.trim() : 'anonymous',
         'updatedAt': FieldValue.serverTimestamp(),
         'source': 'blee_tracker',

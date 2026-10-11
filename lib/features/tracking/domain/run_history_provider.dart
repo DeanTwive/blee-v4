@@ -88,14 +88,18 @@ class RunHistoryNotifier extends Notifier<RunHistoryState> {
   }
 
   void _listenToConnectivity() {
-    _connectivitySub?.cancel();
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
-      final hasConnection = results.any((r) => r != ConnectivityResult.none);
-      if (hasConnection) {
-        debugPrint('[RunHistoryNotifier] Network restored, syncing pending runs...');
-        syncPending();
-      }
-    });
+    try {
+      _connectivitySub?.cancel();
+      _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+        final hasConnection = results.any((r) => r != ConnectivityResult.none);
+        if (hasConnection) {
+          debugPrint('[RunHistoryNotifier] Network restored, syncing pending runs...');
+          syncPending();
+        }
+      });
+    } catch (e) {
+      debugPrint('[RunHistoryNotifier] Connectivity listener skipped in environment: $e');
+    }
 
     ref.onDispose(() {
       _connectivitySub?.cancel();

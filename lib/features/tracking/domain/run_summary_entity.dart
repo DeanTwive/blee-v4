@@ -54,19 +54,23 @@ class BreadcrumbPoint {
 
   factory BreadcrumbPoint.fromMap(Map<String, dynamic> map) {
     return BreadcrumbPoint(
-      runId: map['run_id'] as String,
-      epochId: (map['epoch_id'] as int?) ?? 0,
+      runId: (map['run_id'] as String?) ?? (map['runId'] as String?) ?? '',
+      epochId: (map['epoch_id'] as int?) ?? (map['epochId'] as int?) ?? 0,
       latitude: (map['latitude'] as num).toDouble(),
       longitude: (map['longitude'] as num).toDouble(),
       altitude: (map['altitude'] as num?)?.toDouble(),
-      accuracy: (map['accuracy'] as num).toDouble(),
-      speedMetersPerSec: (map['doppler_speed'] as num?)?.toDouble(),
-      dopplerSpeed: (map['doppler_speed'] as num?)?.toDouble(),
-      hardwareSteps: map['hardware_steps'] as int?,
-      monotonicMs: map['monotonic_ms'] as int?,
-      timestamp: DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int),
-      isRejected: (map['is_rejected'] as int? ?? 0) == 1,
-      rejectionReason: map['rejection_reason'] as String?,
+      accuracy: (map['accuracy'] as num?)?.toDouble() ?? 5.0,
+      speedMetersPerSec: (map['speed_meters_per_sec'] as num?)?.toDouble() ??
+          (map['doppler_speed'] as num?)?.toDouble(),
+      dopplerSpeed: (map['doppler_speed'] as num?)?.toDouble() ??
+          (map['speed_meters_per_sec'] as num?)?.toDouble(),
+      hardwareSteps: (map['hardware_steps'] as int?) ?? (map['hardwareSteps'] as int?),
+      monotonicMs: (map['monotonic_ms'] as int?) ?? (map['monotonicMs'] as int?),
+      timestamp: map['timestamp'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int)
+          : DateTime.now(),
+      isRejected: (map['is_rejected'] as int? ?? (map['isRejected'] == true ? 1 : 0)) == 1,
+      rejectionReason: (map['rejection_reason'] as String?) ?? (map['rejectionReason'] as String?),
     );
   }
 }
@@ -242,6 +246,7 @@ class RunSummaryEntity {
     String? title,
     String? imagePath,
     Uint8List? imageBytes,
+    List<BreadcrumbPoint>? breadcrumbs,
     bool clearImage = false,
   }) {
     return RunSummaryEntity(
@@ -262,7 +267,7 @@ class RunSummaryEntity {
       estimatedCalories: estimatedCalories,
       splits: splits,
       rpe: rpe ?? this.rpe,
-      breadcrumbs: breadcrumbs,
+      breadcrumbs: breadcrumbs ?? this.breadcrumbs,
       title: title ?? this.title,
       imagePath: clearImage ? null : (imagePath ?? this.imagePath),
       imageBytes: clearImage ? null : (imageBytes ?? this.imageBytes),
